@@ -1,3 +1,6 @@
+-- GlicoMama Supabase Schema
+-- Execute in Supabase Dashboard → SQL Editor → Run
+
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -70,45 +73,103 @@ CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id);
 CREATE INDEX IF NOT EXISTS idx_shares_owner ON shares(owner_id);
 CREATE INDEX IF NOT EXISTS idx_shares_shared_with ON shares(shared_with_email);
 
+-- Grant permissions to authenticated and anon roles
+GRANT ALL ON profiles TO authenticated;
+GRANT ALL ON glucose_records TO authenticated;
+GRANT ALL ON reminders TO authenticated;
+GRANT ALL ON shares TO authenticated;
+GRANT SELECT ON profiles TO anon;
+
 -- RLS Policies
 
--- Profiles: users can only see/edit their own profile
+-- Enable RLS on all tables
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE glucose_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shares ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own profile"
-  ON profiles FOR SELECT
+-- Drop any existing policies (idempotent)
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
+DROP POLICY IF EXISTS "Shared users can view owner profile" ON profiles;
+DROP POLICY IF EXISTS "Enable read access for all users" ON profiles;
+DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON profiles;
+DROP POLICY IF EXISTS "Enable update for users based on id" ON profiles;
+DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
+DROP POLICY IF EXISTS "profiles_insert_own" ON profiles;
+DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
+DROP POLICY IF EXISTS "profiles_select_shared" ON profiles;
+
+DROP POLICY IF EXISTS "Users can view own records" ON glucose_records;
+DROP POLICY IF EXISTS "Users can insert own records" ON glucose_records;
+DROP POLICY IF EXISTS "Users can update own records" ON glucose_records;
+DROP POLICY IF EXISTS "Users can delete own records" ON glucose_records;
+DROP POLICY IF EXISTS "Shared users can view records" ON glucose_records;
+DROP POLICY IF EXISTS "Enable read access for all users" ON glucose_records;
+DROP POLICY IF EXISTS "records_select_own" ON glucose_records;
+DROP POLICY IF EXISTS "records_insert_own" ON glucose_records;
+DROP POLICY IF EXISTS "records_update_own" ON glucose_records;
+DROP POLICY IF EXISTS "records_delete_own" ON glucose_records;
+DROP POLICY IF EXISTS "records_select_shared" ON glucose_records;
+
+DROP POLICY IF EXISTS "Users can manage own reminders" ON reminders;
+DROP POLICY IF EXISTS "Enable read access for all users" ON reminders;
+DROP POLICY IF EXISTS "reminders_all_own" ON reminders;
+
+DROP POLICY IF EXISTS "Owners can manage shares" ON shares;
+DROP POLICY IF EXISTS "Shared users can view their shares" ON shares;
+DROP POLICY IF EXISTS "Shared users can accept shares" ON shares;
+DROP POLICY IF EXISTS "Enable read access for all users" ON shares;
+DROP POLICY IF EXISTS "shares_all_owner" ON shares;
+DROP POLICY IF EXISTS "shares_select_shared" ON shares;
+DROP POLICY IF EXISTS "shares_update_shared" ON shares;
+
+-- Profiles policies
+CREATE POLICY "profiles_select_own"
+  ON profiles FOR SELECT TO authenticated
   USING (auth.uid() = id);
 
-CREATE POLICY "Users can update own profile"
-  ON profiles FOR UPDATE
-  USING (auth.uid() = id);
-
-CREATE POLICY "Users can insert own profile"
-  ON profiles FOR INSERT
+CREATE POLICY "profiles_insert_own"
+  ON profiles FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = id);
 
--- Glucose records: users can CRUD their own records
-ALTER TABLE glucose_records ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "profiles_update_own"
+  ON profiles FOR UPDATE TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
-CREATE POLICY "Users can view own records"
-  ON glucose_records FOR SELECT
+CREATE POLICY "profiles_select_shared"
+  ON profiles FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM shares
+      WHERE shares.owner_id = profiles.id
+        AND shares.shared_with_id = auth.uid()
+        AND shares.accepted = true
+    )
+  );
+
+-- Glucose records policies
+CREATE POLICY "records_select_own"
+  ON glucose_records FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can insert own records"
-  ON glucose_records FOR INSERT
+CREATE POLICY "records_insert_own"
+  ON glucose_records FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can update own records"
-  ON glucose_records FOR UPDATE
+CREATE POLICY "records_update_own"
+  ON glucose_records FOR UPDATE TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "records_delete_own"
+  ON glucose_records FOR DELETE TO authenticated
   USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can delete own records"
-  ON glucose_records FOR DELETE
-  USING (auth.uid() = user_id);
-
--- Shared users can view records (read-only)
-CREATE POLICY "Shared users can view records"
-  ON glucose_records FOR SELECT
+CREATE POLICY "records_select_shared"
+  ON glucose_records FOR SELECT TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM shares
@@ -118,40 +179,26 @@ CREATE POLICY "Shared users can view records"
     )
   );
 
--- Reminders: users can CRUD their own
-ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+-- Reminders policies
+CREATE POLICY "reminders_all_own"
+  ON reminders FOR ALL TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can manage own reminders"
-  ON reminders FOR ALL
-  USING (auth.uid() = user_id);
+-- Shares policies
+CREATE POLICY "shares_all_owner"
+  ON shares FOR ALL TO authenticated
+  USING (auth.uid() = owner_id)
+  WITH CHECK (auth.uid() = owner_id);
 
--- Shares: owners can manage, shared users can view
-ALTER TABLE shares ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Owners can manage shares"
-  ON shares FOR ALL
-  USING (auth.uid() = owner_id);
-
-CREATE POLICY "Shared users can view their shares"
-  ON shares FOR SELECT
+CREATE POLICY "shares_select_shared"
+  ON shares FOR SELECT TO authenticated
   USING (shared_with_email = (SELECT email FROM auth.users WHERE id = auth.uid()));
 
-CREATE POLICY "Shared users can accept shares"
-  ON shares FOR UPDATE
+CREATE POLICY "shares_update_shared"
+  ON shares FOR UPDATE TO authenticated
   USING (shared_with_email = (SELECT email FROM auth.users WHERE id = auth.uid()))
   WITH CHECK (shared_with_email = (SELECT email FROM auth.users WHERE id = auth.uid()));
-
--- Profiles: shared users can view profile of owner
-CREATE POLICY "Shared users can view owner profile"
-  ON profiles FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM shares
-      WHERE shares.owner_id = profiles.id
-        AND shares.shared_with_id = auth.uid()
-        AND shares.accepted = true
-    )
-  );
 
 -- Function to auto-create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -185,3 +232,10 @@ DROP TRIGGER IF EXISTS on_auth_user_created_share_link ON auth.users;
 CREATE TRIGGER on_auth_user_created_share_link
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_share_link();
+
+-- Backfill: create profile for any existing users missing one
+INSERT INTO profiles (id, name)
+SELECT id, COALESCE(raw_user_meta_data->>'name', '')
+FROM auth.users
+WHERE id NOT IN (SELECT id FROM profiles)
+ON CONFLICT (id) DO NOTHING;
