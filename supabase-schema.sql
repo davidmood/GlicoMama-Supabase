@@ -193,12 +193,12 @@ CREATE POLICY "shares_all_owner"
 
 CREATE POLICY "shares_select_shared"
   ON shares FOR SELECT TO authenticated
-  USING (shared_with_email = (SELECT email FROM auth.users WHERE id = auth.uid()));
+  USING (shared_with_email = (auth.jwt()->>'email'));
 
 CREATE POLICY "shares_update_shared"
   ON shares FOR UPDATE TO authenticated
-  USING (shared_with_email = (SELECT email FROM auth.users WHERE id = auth.uid()))
-  WITH CHECK (shared_with_email = (SELECT email FROM auth.users WHERE id = auth.uid()));
+  USING (shared_with_email = (auth.jwt()->>'email'))
+  WITH CHECK (shared_with_email = (auth.jwt()->>'email'));
 
 -- Function to auto-create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
