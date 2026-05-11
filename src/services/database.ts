@@ -154,18 +154,19 @@ export async function getSettings(): Promise<UserSettings> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ...DEFAULT_SETTINGS };
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single();
 
+  // If profile fetch fails (RLS or missing row), return defaults
+  if (profileError || !profile) return { ...DEFAULT_SETTINGS };
+
   const { data: reminders } = await supabase
     .from('reminders')
     .select('*')
     .eq('user_id', user.id);
-
-  if (!profile) return { ...DEFAULT_SETTINGS };
 
   return {
     name: profile.name || '',
@@ -191,24 +192,41 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
 
+  const profileData = {
+    id: user.id,
+    name: settings.name,
+    dark_mode: settings.darkMode,
+    glucose_target_min: settings.glucoseTargetMin,
+    glucose_target_max: settings.glucoseTargetMax,
+    glucose_low_max: settings.glucoseLowMax,
+    glucose_attention_max: settings.glucoseAttentionMax,
+    phase: settings.phase || null,
+    sensor: settings.sensor || null,
+    insulin_use: settings.insulinUse || null,
+    onboarding_completed: settings.onboardingCompleted ?? false,
+    updated_at: new Date().toISOString(),
+  };
+
+  // Try upsert first
   const { error } = await supabase
     .from('profiles')
-    .upsert({
-      id: user.id,
-      name: settings.name,
-      dark_mode: settings.darkMode,
-      glucose_target_min: settings.glucoseTargetMin,
-      glucose_target_max: settings.glucoseTargetMax,
-      glucose_low_max: settings.glucoseLowMax,
-      glucose_attention_max: settings.glucoseAttentionMax,
-      phase: settings.phase || null,
-      sensor: settings.sensor || null,
-      insulin_use: settings.insulinUse || null,
-      onboarding_completed: settings.onboardingCompleted ?? false,
-      updated_at: new Date().toISOString(),
-    });
+    .upsert(profileData);
 
-  if (error) throw error;
+  if (error) {
+    // If upsert fails, try update then insert as fallback
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update(profileData)
+      .eq('id', user.id);
+
+    if (updateError) {
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert(profileData);
+
+      if (insertError) throw insertError;
+    }
+  }
 }
 
 export async function addReminder(reminder: Reminder): Promise<void> {
