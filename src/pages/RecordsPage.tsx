@@ -132,7 +132,7 @@ export default function RecordsPage() {
           .map(([date, dayRecords]) => (
             <div className="card" key={date}>
               <div className="card-header">
-                <h3>{format(new Date(date), "EEEE, dd 'de' MMMM", { locale: ptBR })}</h3>
+                <h3>{format(new Date(date + 'T12:00:00'), "EEEE, dd 'de' MMMM", { locale: ptBR })}</h3>
                 <span className="badge badge-purple">{dayRecords.length} registros</span>
               </div>
               <div className="table-scroll">
