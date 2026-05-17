@@ -8,6 +8,8 @@ import {
   INSULIN_LOCALS,
   BABY_MOODS,
   createEmptyRecord,
+  utcToLocalInput,
+  localInputToUtc,
 } from '../types';
 import type { GlucoseRecord } from '../types';
 
@@ -88,8 +90,8 @@ export default function NewRecordModal({ onClose, onSave, editRecord, mode = 'fu
                 <input
                   type="datetime-local"
                   className="form-input"
-                  value={form.timestamp}
-                  onChange={(e) => update('timestamp', e.target.value)}
+                  value={utcToLocalInput(form.timestamp)}
+                  onChange={(e) => update('timestamp', localInputToUtc(e.target.value))}
                 />
               </div>
 

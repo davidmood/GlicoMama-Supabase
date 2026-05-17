@@ -7,7 +7,7 @@ import { exportToCSV, exportToPDF } from '../services/export';
 
 export default function ReportsPage() {
   const [records, setRecords] = useState<GlucoseRecord[]>([]);
-  const [userName, setUserName] = useState('Renata');
+  const [userName, setUserName] = useState('');
   const [period, setPeriod] = useState(30);
 
   useEffect(() => {
@@ -95,7 +95,7 @@ export default function ReportsPage() {
           </p>
           <button
             className="btn btn-primary"
-            onClick={() => exportToPDF(filtered, userName)}
+            onClick={() => { exportToPDF(filtered, userName); }}
             disabled={filtered.length === 0}
           >
             <Download size={16} /> Baixar PDF

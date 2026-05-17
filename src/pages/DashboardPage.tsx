@@ -296,7 +296,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
     <>
       <div className="page-header">
         <div>
-          <h2>Olá, {settings?.name ?? 'Renata'}! 👋</h2>
+          <h2>Olá, {settings?.name || 'Usuária'}! 👋</h2>
           <p className="page-greeting">Aqui está o resumo do seu dia.</p>
         </div>
         <button className="btn btn-primary" onClick={() => { setEditRecord(null); setShowModal(true); }}>

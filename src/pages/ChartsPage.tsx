@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
-import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { format, subDays, addDays, startOfDay, endOfDay, isToday } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -14,6 +15,7 @@ import {
   Legend,
   Filler,
 } from 'chart.js';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { GlucoseRecord } from '../types';
 import { getAllRecords, getSettings } from '../services/database';
 import type { UserSettings } from '../types';
@@ -24,6 +26,7 @@ export default function ChartsPage() {
   const [records, setRecords] = useState<GlucoseRecord[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [period, setPeriod] = useState<7 | 14 | 30>(7);
+  const [selectedDate, setSelectedDate] = useState(new Date());
 
   useEffect(() => {
     Promise.all([getAllRecords(), getSettings()]).then(([r, s]) => {
@@ -37,39 +40,38 @@ export default function ChartsPage() {
     return records.filter((r) => new Date(r.timestamp) >= start);
   }, [records, period]);
 
-  // Daily glucose trend
+  // Daily glucose trend - shows all records for selected day
   const dailyChart = useMemo(() => {
-    const days: string[] = [];
-    const preData: (number | null)[] = [];
-    const pos1Data: (number | null)[] = [];
-    const pos2Data: (number | null)[] = [];
-
-    for (let i = period - 1; i >= 0; i--) {
-      const day = subDays(new Date(), i);
-      days.push(format(day, 'dd/MM'));
-      const s = startOfDay(day);
-      const e = endOfDay(day);
-      const dayRecs = records.filter((r) => {
+    const dayStart = startOfDay(selectedDate);
+    const dayEnd = endOfDay(selectedDate);
+    const dayRecs = records
+      .filter((r) => {
         const t = new Date(r.timestamp).getTime();
-        return t >= s.getTime() && t <= e.getTime();
-      });
-      const pre = dayRecs.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
-      const p1 = dayRecs.filter((r) => r.glucosePos1h).map((r) => r.glucosePos1h!);
-      const p2 = dayRecs.filter((r) => r.glucosePos2h).map((r) => r.glucosePos2h!);
-      preData.push(pre.length ? Math.round(pre.reduce((a, b) => a + b, 0) / pre.length) : null);
-      pos1Data.push(p1.length ? Math.round(p1.reduce((a, b) => a + b, 0) / p1.length) : null);
-      pos2Data.push(p2.length ? Math.round(p2.reduce((a, b) => a + b, 0) / p2.length) : null);
+        return t >= dayStart.getTime() && t <= dayEnd.getTime();
+      })
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    if (dayRecs.length === 0) {
+      return {
+        labels: ['Sem registros'],
+        datasets: [{ label: 'Pré', data: [null], borderColor: '#22c55e', pointRadius: 0 }],
+      };
     }
 
+    const labels = dayRecs.map((r) => format(new Date(r.timestamp), 'HH:mm') + '\n' + r.mealType);
+    const preData = dayRecs.map((r) => r.glucosePre ?? null);
+    const pos1Data = dayRecs.map((r) => r.glucosePos1h ?? null);
+    const pos2Data = dayRecs.map((r) => r.glucosePos2h ?? null);
+
     return {
-      labels: days,
+      labels,
       datasets: [
-        { label: 'Pré', data: preData, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.4, fill: true, pointRadius: 3 },
-        { label: 'Pós 1h', data: pos1Data, borderColor: '#f59e0b', tension: 0.4, pointRadius: 3 },
-        { label: 'Pós 2h', data: pos2Data, borderColor: '#ec4899', tension: 0.4, pointRadius: 3 },
+        { label: 'Pré', data: preData, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.3, fill: true, pointRadius: 5, pointBackgroundColor: '#22c55e', spanGaps: true },
+        { label: 'Pós 1h', data: pos1Data, borderColor: '#f59e0b', tension: 0.3, pointRadius: 5, pointBackgroundColor: '#f59e0b', spanGaps: true },
+        { label: 'Pós 2h', data: pos2Data, borderColor: '#ec4899', tension: 0.3, pointRadius: 5, pointBackgroundColor: '#ec4899', spanGaps: true },
       ],
     };
-  }, [records, period]);
+  }, [records, selectedDate]);
 
   // Glucose by meal
   const mealChart = useMemo(() => {
@@ -145,30 +147,74 @@ export default function ChartsPage() {
     };
   }, [records, period]);
 
-  // Time in range donut
-  const rangeDonut = useMemo(() => {
-    const min = settings?.glucoseTargetMin ?? 70;
-    const max = settings?.glucoseTargetMax ?? 140;
-    const vals = periodRecords.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
-    if (vals.length === 0) return { labels: ['Sem dados'], datasets: [{ data: [1], backgroundColor: ['#3d2d5c'], cutout: '70%' }] };
-    const low = vals.filter((v) => v < min).length;
-    const inRange = vals.filter((v) => v >= min && v <= max).length;
-    const high = vals.filter((v) => v > max).length;
-    const t = vals.length;
-    return {
-      labels: ['Baixa', 'Em faixa', 'Alta'],
-      datasets: [{ data: [Math.round(low/t*100), Math.round(inRange/t*100), Math.round(high/t*100)], backgroundColor: ['#3b82f6', '#22c55e', '#ef4444'], cutout: '70%', borderWidth: 0 }],
-    };
-  }, [periodRecords, settings]);
+  // Time in range donut with detailed labels
+  const lowMax = settings?.glucoseLowMax ?? 69;
+  const targetMin = settings?.glucoseTargetMin ?? 70;
+  const targetMax = settings?.glucoseTargetMax ?? 100;
+  const attentionMax = settings?.glucoseAttentionMax ?? 140;
 
-  const chartOpts = {
+  const rangeDonut = useMemo(() => {
+    const vals = periodRecords.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
+    if (vals.length === 0) return null;
+
+    const low = vals.filter((v) => v <= lowMax).length;
+    const ideal = vals.filter((v) => v >= targetMin && v <= targetMax).length;
+    const attention = vals.filter((v) => v > targetMax && v <= attentionMax).length;
+    const high = vals.filter((v) => v > attentionMax).length;
+    const t = vals.length;
+
+    const lowPct = Math.round(low / t * 100);
+    const idealPct = Math.round(ideal / t * 100);
+    const attPct = Math.round(attention / t * 100);
+    const highPct = Math.round(high / t * 100);
+
+    return {
+      data: {
+        labels: [
+          `Baixa (≤${lowMax}): ${lowPct}%`,
+          `Ideal (${targetMin}–${targetMax}): ${idealPct}%`,
+          `Atenção (${targetMax + 1}–${attentionMax}): ${attPct}%`,
+          `Alta (>${attentionMax}): ${highPct}%`,
+        ],
+        datasets: [{
+          data: [lowPct, idealPct, attPct, highPct],
+          backgroundColor: ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444'],
+          cutout: '65%',
+          borderWidth: 0,
+        }],
+      },
+      total: t,
+      lowPct,
+      idealPct,
+      attPct,
+      highPct,
+    };
+  }, [periodRecords, lowMax, targetMin, targetMax, attentionMax]);
+
+  const dailyChartOpts = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: { position: 'bottom' as const, labels: { color: '#a78bca', usePointStyle: true, padding: 12, font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          title: (items: { label?: string }[]) => items[0]?.label?.replace('\n', ' - ') || '',
+        },
+      },
     },
     scales: {
-      x: { grid: { color: 'rgba(61,45,92,0.3)' }, ticks: { color: '#6b5b8a', font: { size: 10 } } },
+      x: {
+        grid: { color: 'rgba(61,45,92,0.3)' },
+        ticks: {
+          color: '#6b5b8a',
+          font: { size: 9 },
+          maxRotation: 45,
+          callback: function(_: unknown, index: number) {
+            const label = dailyChart.labels[index];
+            return label ? label.split('\n')[0] : '';
+          },
+        },
+      },
       y: { grid: { color: 'rgba(61,45,92,0.3)' }, ticks: { color: '#6b5b8a' } },
     },
   };
@@ -194,6 +240,29 @@ export default function ChartsPage() {
     },
   };
 
+  const donutOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom' as const,
+        labels: {
+          color: '#a78bca',
+          usePointStyle: true,
+          padding: 10,
+          font: { size: 11 },
+        },
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx: { label?: string; raw?: unknown }) => `${ctx.label}`,
+        },
+      },
+    },
+  };
+
+  const selectedDateStr = format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR });
+
   return (
     <>
       <div className="page-header">
@@ -209,13 +278,55 @@ export default function ChartsPage() {
 
       <div className="charts-grid">
         <div className="card">
-          <div className="card-header"><h3>Tendência de Glicemia</h3></div>
-          <div className="chart-container"><Line data={dailyChart} options={chartOpts} /></div>
+          <div className="card-header" style={{ flexDirection: 'column', gap: 8 }}>
+            <h3>Tendência de Glicemia</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                className="btn-icon"
+                onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+                style={{ padding: 4 }}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize', minWidth: 180, textAlign: 'center' }}>
+                {isToday(selectedDate) ? 'Hoje' : selectedDateStr}
+              </span>
+              <button
+                className="btn-icon"
+                onClick={() => !isToday(selectedDate) && setSelectedDate(addDays(selectedDate, 1))}
+                style={{ padding: 4, opacity: isToday(selectedDate) ? 0.3 : 1 }}
+                disabled={isToday(selectedDate)}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+          <div className="chart-container"><Line data={dailyChart} options={dailyChartOpts} /></div>
         </div>
         <div className="card">
           <div className="card-header"><h3>Tempo em Faixa</h3></div>
           <div className="chart-container" style={{ position: 'relative' }}>
-            <Doughnut data={rangeDonut} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#a78bca', usePointStyle: true, padding: 10 } } } }} />
+            {rangeDonut ? (
+              <>
+                <Doughnut data={rangeDonut.data} options={donutOpts} />
+                <div style={{
+                  position: 'absolute',
+                  top: '35%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  textAlign: 'center',
+                  pointerEvents: 'none',
+                }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#22c55e' }}>{rangeDonut.idealPct}%</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>em faixa</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{rangeDonut.total} medições</div>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)' }}>
+                Sem registros de glicemia no período
+              </div>
+            )}
           </div>
         </div>
       </div>

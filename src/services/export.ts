@@ -53,26 +53,64 @@ export function exportToCSV(records: GlucoseRecord[]): void {
   downloadBlob(blob, `glicemia_registros_${format(new Date(), 'yyyy-MM-dd')}.csv`);
 }
 
-export function exportToPDF(records: GlucoseRecord[], userName: string): void {
+async function loadLogoBase64(): Promise<string | null> {
+  try {
+    const res = await fetch('/logo.png');
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function exportToPDF(records: GlucoseRecord[], userName: string): Promise<void> {
   const doc = new jsPDF({ orientation: 'landscape' });
+
+  const logoBase64 = await loadLogoBase64();
+
+  let headerTextX = 14;
+  let headerTextY = 22;
+
+  if (logoBase64) {
+    doc.addImage(logoBase64, 'PNG', 14, 8, 20, 20);
+    headerTextX = 38;
+    headerTextY = 18;
+  }
 
   doc.setFontSize(18);
   doc.setTextColor(107, 33, 168);
-  doc.text('Glicemia & Mama - Relatório', 14, 22);
+  doc.text('GlicoMama - Relatório', headerTextX, headerTextY);
+
+  doc.setFontSize(9);
+  doc.setTextColor(150);
+  doc.text('Acompanhamento de glicemia, maternidade e amamentação', headerTextX, headerTextY + 5);
+
+  const infoY = logoBase64 ? 32 : 30;
 
   doc.setFontSize(10);
   doc.setTextColor(100);
-  doc.text(`Paciente: ${userName}`, 14, 30);
-  doc.text(`Gerado em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, 14, 36);
-  doc.text(`Total de registros: ${records.length}`, 14, 42);
+  doc.text(`Paciente: ${userName}`, 14, infoY);
+  doc.text(`Gerado em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, 14, infoY + 6);
+  doc.text(`Total de registros: ${records.length}`, 14, infoY + 12);
 
   const preValues = records.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
+  let statsY = infoY + 18;
   if (preValues.length > 0) {
     const avg = preValues.reduce((a, b) => a + b, 0) / preValues.length;
     const inRange = preValues.filter((v) => v >= 70 && v <= 140).length;
     const pct = ((inRange / preValues.length) * 100).toFixed(0);
-    doc.text(`Média glicêmica: ${avg.toFixed(0)} mg/dL | Tempo em faixa: ${pct}%`, 14, 48);
+    doc.text(`Média glicêmica: ${avg.toFixed(0)} mg/dL | Tempo em faixa: ${pct}%`, 14, statsY);
+    statsY += 6;
   }
+
+  doc.setDrawColor(107, 33, 168);
+  doc.setLineWidth(0.5);
+  doc.line(14, statsY, doc.internal.pageSize.width - 14, statsY);
 
   const tableData = records.map((r) => [
     format(new Date(r.timestamp), 'dd/MM HH:mm'),
@@ -89,7 +127,7 @@ export function exportToPDF(records: GlucoseRecord[], userName: string): void {
   ]);
 
   autoTable(doc, {
-    startY: 54,
+    startY: statsY + 4,
     head: [['Data', 'Refeição', 'Pré', 'Pós 1h', 'Pós 2h', 'Insulina', 'Carb', 'Amament.', 'Duração', 'Desc. Refeição', 'Observações']],
     body: tableData,
     theme: 'grid',
@@ -102,6 +140,17 @@ export function exportToPDF(records: GlucoseRecord[], userName: string): void {
       10: { cellWidth: 40 },
     },
   });
+
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(180);
+    const pageH = doc.internal.pageSize.height;
+    const pageW = doc.internal.pageSize.width;
+    doc.text('GlicoMama - Este documento não substitui orientação médica profissional', 14, pageH - 8);
+    doc.text(`Página ${i} de ${pageCount}`, pageW - 40, pageH - 8);
+  }
 
   doc.save(`glicemia_relatorio_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
 }
