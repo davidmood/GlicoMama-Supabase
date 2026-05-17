@@ -54,7 +54,7 @@ export default function SettingsPage({ darkMode, onToggleDarkMode, onSettingsCha
 
   const handleExportPDF = async () => {
     const records = await getAllRecords();
-    exportToPDF(records, settings?.name ?? 'Usuário');
+    await exportToPDF(records, settings?.name ?? 'Usuário');
   };
 
   const handleManualBackup = async () => {

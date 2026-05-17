@@ -95,7 +95,7 @@ export default function ReportsPage() {
           </p>
           <button
             className="btn btn-primary"
-            onClick={() => exportToPDF(filtered, userName)}
+            onClick={() => { exportToPDF(filtered, userName); }}
             disabled={filtered.length === 0}
           >
             <Download size={16} /> Baixar PDF
