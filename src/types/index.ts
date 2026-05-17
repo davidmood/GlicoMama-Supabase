@@ -133,13 +133,25 @@ export interface Goal {
   unit: string;
 }
 
-export function createEmptyRecord(): Omit<GlucoseRecord, 'id'> {
-  const now = new Date();
-  const localISO = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+// Convert UTC ISO string to datetime-local input value (local time)
+export function utcToLocalInput(utc: string): string {
+  const d = new Date(utc);
+  if (isNaN(d.getTime())) return utc;
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 16);
+}
+
+// Convert datetime-local input value (local time) to UTC ISO string
+export function localInputToUtc(local: string): string {
+  const d = new Date(local);
+  if (isNaN(d.getTime())) return local;
+  return d.toISOString();
+}
+
+export function createEmptyRecord(): Omit<GlucoseRecord, 'id'> {
   return {
-    timestamp: localISO,
+    timestamp: new Date().toISOString(),
     mealType: 'Café da manhã',
     glucosePre: null,
     glucosePos1h: null,

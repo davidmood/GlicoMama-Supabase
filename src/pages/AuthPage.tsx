@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Mail, Lock, User, ArrowRight, Fingerprint } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 interface AuthPageProps {
@@ -14,6 +14,16 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem('glm_remember') === 'true';
+  });
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('glm_saved_email');
+    if (savedEmail) {
+      setEmail(savedEmail);
+    }
+  }, []);
 
   const handleLogin = async () => {
     setLoading(true);
@@ -24,6 +34,13 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
         ? 'Email ou senha incorretos'
         : error.message);
     } else {
+      if (rememberMe) {
+        localStorage.setItem('glm_remember', 'true');
+        localStorage.setItem('glm_saved_email', email);
+      } else {
+        localStorage.removeItem('glm_remember');
+        localStorage.removeItem('glm_saved_email');
+      }
       onAuth();
     }
     setLoading(false);
@@ -87,6 +104,7 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
                 placeholder="Seu nome"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                autoComplete="name"
                 required
               />
             </div>
@@ -100,6 +118,7 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
@@ -113,10 +132,23 @@ export default function AuthPage({ onAuth }: AuthPageProps) {
                 placeholder="Senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 required
                 minLength={6}
               />
             </div>
+          )}
+
+          {mode === 'login' && (
+            <label className="auth-remember">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
+              <Fingerprint size={14} />
+              Lembrar-me
+            </label>
           )}
 
           {error && <div className="auth-error">{error}</div>}

@@ -1485,6 +1485,23 @@ textarea.form-input {
   border-radius: var(--radius-sm);
 }
 
+.auth-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.auth-remember input[type="checkbox"] {
+  accent-color: var(--accent-purple);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .auth-links {
   margin-top: 20px;
   display: flex;

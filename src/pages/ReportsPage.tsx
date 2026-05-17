@@ -7,7 +7,7 @@ import { exportToCSV, exportToPDF } from '../services/export';
 
 export default function ReportsPage() {
   const [records, setRecords] = useState<GlucoseRecord[]>([]);
-  const [userName, setUserName] = useState('Renata');
+  const [userName, setUserName] = useState('');
   const [period, setPeriod] = useState(30);
 
   useEffect(() => {
