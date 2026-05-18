@@ -1,0 +1,11 @@
+[project]
+name = "glicomama-push"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115.0",
+    "firebase-admin>=6.0.0",
+    "apscheduler>=3.10.0",
+    "supabase>=2.0.0",
+    "uvicorn>=0.30.0",
+]

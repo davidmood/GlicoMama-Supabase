@@ -62,7 +62,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
     } else {
       await addRecord(record);
       if (options?.scheduleAlarm && record.glucosePre && !record.glucosePos1h && !record.glucosePos2h) {
-        const scheduled = scheduleGlucoseReminders(
+        const scheduled = await scheduleGlucoseReminders(
           record.mealType,
           record.timestamp,
           (msg) => addToast(msg),

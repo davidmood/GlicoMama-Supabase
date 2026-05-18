@@ -157,8 +157,9 @@ export default function SettingsPage({ darkMode, onToggleDarkMode, onSettingsCha
             }}>
               <Bell size={14} /> Ativar Notificações
             </button>
-            <button className="btn btn-primary" onClick={() => {
-              sendTestNotification();
+            <button className="btn btn-primary" onClick={async () => {
+              showStatus('Enviando notificação de teste...');
+              await sendTestNotification();
               showStatus('Notificação de teste enviada!');
             }}>
               <Bell size={14} /> Testar Notificação

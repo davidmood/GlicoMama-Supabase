@@ -15,7 +15,7 @@ import Disclaimer from './components/Disclaimer';
 import AuthPage from './pages/AuthPage';
 import { getSettings, addRecord, saveSettings } from './services/database';
 import { supabase } from './services/supabase';
-import { requestNotificationPermission, scheduleGlucoseReminders, checkMissedNotifications } from './services/notifications';
+import { requestNotificationPermission, scheduleGlucoseReminders, checkMissedNotifications, setupForegroundHandler } from './services/notifications';
 import { scheduleAutoBackup } from './services/backup';
 import Onboarding from './components/Onboarding';
 import type { GlucoseRecord, UserPhase, SensorType, InsulinUse } from './types';
@@ -42,6 +42,7 @@ export default function App() {
         loadSettings();
         requestNotificationPermission();
         scheduleAutoBackup();
+        setupForegroundHandler((msg) => addToast(msg));
       }
     });
 
@@ -131,7 +132,7 @@ export default function App() {
     await addRecord(record);
 
     if (options?.scheduleAlarm && record.glucosePre && !record.glucosePos1h && !record.glucosePos2h) {
-      const scheduled = scheduleGlucoseReminders(
+      const scheduled = await scheduleGlucoseReminders(
         record.mealType,
         record.timestamp,
         (msg) => addToast(msg),
