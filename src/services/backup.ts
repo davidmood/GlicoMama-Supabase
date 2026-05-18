@@ -1,5 +1,5 @@
-import { getAllRecords, getSettings, addRecord, saveSettings } from './database';
-import type { GlucoseRecord, UserSettings } from '../types';
+import { getAllRecords, getSettings, addRecord, saveSettings, addReminder } from './database';
+import type { GlucoseRecord, UserSettings, Reminder } from '../types';
 import { localInputToUtc } from '../types';
 
 const BACKUP_KEY_PREFIX = 'glicomama_backup_';
@@ -51,24 +51,50 @@ export async function importBackup(file: File): Promise<{ records: number }> {
   const text = await file.text();
   const data = JSON.parse(text) as BackupData;
 
-  if (!data.version || !data.records || !Array.isArray(data.records)) {
+  if (!data.records || !Array.isArray(data.records)) {
     throw new Error('Arquivo de backup inválido');
   }
 
+  // Import settings (excluding reminders — they go to their own table)
   if (data.settings) {
     const current = await getSettings();
-    await saveSettings({
-      ...current,
-      ...data.settings,
-      onboardingCompleted: current.onboardingCompleted || data.settings.onboardingCompleted || false,
-    });
+    const { reminders: _oldReminders, ...settingsWithoutReminders } = data.settings as UserSettings & { reminders?: Reminder[] };
+    try {
+      await saveSettings({
+        ...current,
+        ...settingsWithoutReminders,
+        reminders: current.reminders,
+        onboardingCompleted: current.onboardingCompleted || data.settings.onboardingCompleted || false,
+      });
+    } catch {
+      // Settings save failed — continue with records
+    }
+
+    // Import reminders from old backup into the reminders table
+    const oldReminders = (data.settings as UserSettings & { reminders?: Reminder[] }).reminders;
+    if (oldReminders && Array.isArray(oldReminders)) {
+      for (const rem of oldReminders) {
+        try {
+          await addReminder({
+            ...rem,
+            id: rem.id.length < 10 ? crypto.randomUUID() : rem.id,
+          });
+        } catch {
+          // Skip duplicate or invalid reminders
+        }
+      }
+    }
   }
 
   let count = 0;
   for (const record of data.records) {
-    const normalized = { ...record, timestamp: normalizeTimestamp(record.timestamp) };
-    await addRecord(normalized);
-    count++;
+    try {
+      const normalized = { ...record, timestamp: normalizeTimestamp(record.timestamp) };
+      await addRecord(normalized);
+      count++;
+    } catch {
+      // Skip individual record errors (e.g., duplicates)
+    }
   }
 
   return { records: count };
