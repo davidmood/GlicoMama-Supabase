@@ -1,51 +1,46 @@
 import { useEffect, useState } from 'react';
 import { Bell, Plus, Trash2 } from 'lucide-react';
-import { getSettings, saveSettings } from '../services/database';
-import type { UserSettings } from '../types';
+import { getSettings, addReminder as dbAddReminder, removeReminder as dbRemoveReminder, updateReminder as dbUpdateReminder } from '../services/database';
+import type { Reminder } from '../types';
 
 export default function RemindersPage() {
-  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [newTime, setNewTime] = useState('08:00');
   const [newLabel, setNewLabel] = useState('');
 
+  const loadReminders = async () => {
+    const s = await getSettings();
+    setReminders(s.reminders);
+  };
+
   useEffect(() => {
-    getSettings().then(setSettings);
+    loadReminders();
   }, []);
 
   const addReminder = async () => {
-    if (!settings || !newLabel.trim()) return;
-    const updated: UserSettings = {
-      ...settings,
-      reminders: [
-        ...settings.reminders,
-        { id: crypto.randomUUID(), time: newTime, label: newLabel.trim(), enabled: true },
-      ],
+    if (!newLabel.trim()) return;
+    const reminder: Reminder = {
+      id: crypto.randomUUID(),
+      time: newTime,
+      label: newLabel.trim(),
+      enabled: true,
     };
-    await saveSettings(updated);
-    setSettings(updated);
+    await dbAddReminder(reminder);
+    setReminders((prev) => [...prev, reminder]);
     setNewLabel('');
   };
 
   const removeReminder = async (id: string) => {
-    if (!settings) return;
-    const updated: UserSettings = {
-      ...settings,
-      reminders: settings.reminders.filter((r) => r.id !== id),
-    };
-    await saveSettings(updated);
-    setSettings(updated);
+    await dbRemoveReminder(id);
+    setReminders((prev) => prev.filter((r) => r.id !== id));
   };
 
   const toggleReminder = async (id: string) => {
-    if (!settings) return;
-    const updated: UserSettings = {
-      ...settings,
-      reminders: settings.reminders.map((r) =>
-        r.id === id ? { ...r, enabled: !r.enabled } : r
-      ),
-    };
-    await saveSettings(updated);
-    setSettings(updated);
+    const rem = reminders.find((r) => r.id === id);
+    if (!rem) return;
+    const updated = { ...rem, enabled: !rem.enabled };
+    await dbUpdateReminder(updated);
+    setReminders((prev) => prev.map((r) => r.id === id ? updated : r));
   };
 
   return (
@@ -100,12 +95,12 @@ export default function RemindersPage() {
           </h3>
         </div>
 
-        {(settings?.reminders ?? []).length === 0 ? (
+        {reminders.length === 0 ? (
           <div className="empty-state">
             <p>Nenhum lembrete configurado.</p>
           </div>
         ) : (
-          (settings?.reminders ?? [])
+          reminders
             .sort((a, b) => a.time.localeCompare(b.time))
             .map((rem) => (
               <div className="reminder-item" key={rem.id} style={{ opacity: rem.enabled ? 1 : 0.5 }}>

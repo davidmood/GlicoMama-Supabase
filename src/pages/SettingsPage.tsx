@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
-import { Settings, Moon, Database, Trash2, Download, Upload, Save, Clock } from 'lucide-react';
+import { Settings, Moon, Database, Trash2, Download, Upload, Save, Clock, Bell } from 'lucide-react';
 import { getSettings, getAllRecords, deleteAllRecords } from '../services/database';
 import type { UserSettings } from '../types';
 import { exportToCSV, exportToPDF } from '../services/export';
 import { createBackup, downloadBackup, importBackup, listAutoBackups, restoreAutoBackup, type AutoBackupInfo } from '../services/backup';
+import { requestNotificationPermission, sendTestNotification } from '../services/notifications';
 import { DisclaimerBanner } from '../components/Disclaimer';
 
 interface SettingsPageProps {
@@ -67,12 +68,15 @@ export default function SettingsPage({ darkMode, onToggleDarkMode, onSettingsCha
     const file = e.target.files?.[0];
     if (!file) return;
     try {
+      showStatus('Importando...');
       const result = await importBackup(file);
       showStatus(`Importados ${result.records} registros com sucesso!`);
       loadData();
       onSettingsChange();
-    } catch {
-      showStatus('Erro: arquivo de backup inválido');
+    } catch (err) {
+      console.error('Import error:', err);
+      const msg = err instanceof Error ? err.message : 'Arquivo de backup inválido';
+      showStatus(`Erro ao importar: ${msg}`);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -127,6 +131,39 @@ export default function SettingsPage({ darkMode, onToggleDarkMode, onSettingsCha
             className={`toggle-switch ${darkMode ? 'active' : ''}`}
             onClick={onToggleDarkMode}
           />
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Bell size={18} style={{ color: 'var(--accent-purple)' }} />
+            Notificações
+          </h3>
+        </div>
+        <div style={{ padding: '12px 0' }}>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+            As notificações são usadas para lembretes de glicemia pós 1h e 2h.
+            {typeof Notification !== 'undefined' && (
+              <span style={{ display: 'block', marginTop: 4, fontWeight: 500, color: Notification.permission === 'granted' ? '#22c55e' : Notification.permission === 'denied' ? '#ef4444' : '#f59e0b' }}>
+                Status: {Notification.permission === 'granted' ? 'Ativadas' : Notification.permission === 'denied' ? 'Bloqueadas (ative nas configurações do navegador)' : 'Não solicitadas'}
+              </span>
+            )}
+          </p>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary" onClick={async () => {
+              const granted = await requestNotificationPermission();
+              showStatus(granted ? 'Notificações ativadas!' : 'Permissão de notificação negada. Ative nas configurações do navegador.');
+            }}>
+              <Bell size={14} /> Ativar Notificações
+            </button>
+            <button className="btn btn-primary" onClick={() => {
+              sendTestNotification();
+              showStatus('Notificação de teste enviada!');
+            }}>
+              <Bell size={14} /> Testar Notificação
+            </button>
+          </div>
         </div>
       </div>
 
