@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bell, Plus, Trash2 } from 'lucide-react';
 import { getSettings, addReminder as dbAddReminder, removeReminder as dbRemoveReminder, updateReminder as dbUpdateReminder } from '../services/database';
+import { syncRemindersWithBackend } from '../services/notifications';
 import type { Reminder } from '../types';
 
 export default function RemindersPage() {
@@ -17,6 +18,10 @@ export default function RemindersPage() {
     loadReminders();
   }, []);
 
+  const syncWithBackend = async (updatedReminders: Reminder[]) => {
+    await syncRemindersWithBackend(updatedReminders);
+  };
+
   const addReminder = async () => {
     if (!newLabel.trim()) return;
     const reminder: Reminder = {
@@ -26,21 +31,27 @@ export default function RemindersPage() {
       enabled: true,
     };
     await dbAddReminder(reminder);
-    setReminders((prev) => [...prev, reminder]);
+    const updated = [...reminders, reminder];
+    setReminders(updated);
     setNewLabel('');
+    syncWithBackend(updated);
   };
 
   const removeReminder = async (id: string) => {
     await dbRemoveReminder(id);
-    setReminders((prev) => prev.filter((r) => r.id !== id));
+    const updated = reminders.filter((r) => r.id !== id);
+    setReminders(updated);
+    syncWithBackend(updated);
   };
 
   const toggleReminder = async (id: string) => {
     const rem = reminders.find((r) => r.id === id);
     if (!rem) return;
-    const updated = { ...rem, enabled: !rem.enabled };
-    await dbUpdateReminder(updated);
-    setReminders((prev) => prev.map((r) => r.id === id ? updated : r));
+    const toggled = { ...rem, enabled: !rem.enabled };
+    await dbUpdateReminder(toggled);
+    const updated = reminders.map((r) => r.id === id ? toggled : r);
+    setReminders(updated);
+    syncWithBackend(updated);
   };
 
   return (
@@ -127,8 +138,8 @@ export default function RemindersPage() {
           <h3>Nota</h3>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-          Os lembretes funcionam como referência visual. Para notificações push no celular, instale o app como PWA
-          e ative as notificações do navegador.
+          Os lembretes ativos enviam notificações push diárias no horário configurado,
+          mesmo com o app fechado. Certifique-se de que as notificações estão ativadas em Configurações.
         </p>
       </div>
     </>

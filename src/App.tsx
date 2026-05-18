@@ -15,7 +15,7 @@ import Disclaimer from './components/Disclaimer';
 import AuthPage from './pages/AuthPage';
 import { getSettings, addRecord, saveSettings } from './services/database';
 import { supabase } from './services/supabase';
-import { requestNotificationPermission, scheduleGlucoseReminders, checkMissedNotifications, setupForegroundHandler } from './services/notifications';
+import { requestNotificationPermission, scheduleGlucoseReminders, checkMissedNotifications, setupForegroundHandler, syncRemindersWithBackend } from './services/notifications';
 import { scheduleAutoBackup } from './services/backup';
 import Onboarding from './components/Onboarding';
 import type { GlucoseRecord, UserPhase, SensorType, InsulinUse } from './types';
@@ -39,7 +39,13 @@ export default function App() {
       setSession(s);
       setAuthLoading(false);
       if (s) {
-        loadSettings();
+        loadSettings().then(async () => {
+          // Sync reminders with push backend after settings load
+          const settings = await getSettings();
+          if (settings.reminders.length > 0) {
+            syncRemindersWithBackend(settings.reminders);
+          }
+        });
         requestNotificationPermission();
         scheduleAutoBackup();
         setupForegroundHandler((msg) => addToast(msg));

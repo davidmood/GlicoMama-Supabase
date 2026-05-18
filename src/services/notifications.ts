@@ -296,3 +296,29 @@ export function clearAllScheduledReminders() {
   activeTimers.clear();
   savePending([]);
 }
+
+// --- Sync Recurring Reminders with Backend ---
+
+export async function syncRemindersWithBackend(reminders: { id: string; time: string; label: string; enabled: boolean }[]): Promise<boolean> {
+  const token = getCachedFCMToken();
+  if (!PUSH_API_URL || !token) return false;
+
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const res = await fetch(`${PUSH_API_URL}/api/sync-reminders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: user.id,
+        fcm_token: token,
+        reminders,
+        tz_offset_minutes: -new Date().getTimezoneOffset(),
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
