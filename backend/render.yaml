@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: glicomama-push
+    runtime: docker
+    plan: free
+    envVars:
+      - key: FIREBASE_CREDENTIALS
+        sync: false
+      - key: SUPABASE_URL
+        value: https://obdnpizktbutnphbakog.supabase.co
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
