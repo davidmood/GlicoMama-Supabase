@@ -1,6 +1,6 @@
-// GlicoMama Service Worker - Notifications & Offline Support
+// GlicoMama Service Worker - Push Notifications & Offline Support
 
-const CACHE_NAME = 'glicomama-v1';
+const CACHE_NAME = 'glicomama-v2';
 
 // Install event - cache essential files
 self.addEventListener('install', (event) => {
@@ -35,6 +35,39 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request).catch(() => {
       return caches.match(event.request);
+    })
+  );
+});
+
+// Handle push notifications from backend (standard Web Push)
+self.addEventListener('push', (event) => {
+  let data = { title: 'GlicoMama', body: '' };
+  try {
+    if (event.data) {
+      data = event.data.json();
+    }
+  } catch {
+    data.body = event.data?.text() || '';
+  }
+
+  const title = data.title || 'GlicoMama';
+  const body = data.body || '';
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: '/logo-192.png',
+      badge: '/logo-192.png',
+      tag: `glico-push-${Date.now()}`,
+      requireInteraction: true,
+      data: { url: '/' },
+    }).then(() => {
+      // Notify foreground clients
+      return self.clients.matchAll({ type: 'window' }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'PUSH_NOTIFICATION', title, body });
+        });
+      });
     })
   );
 });
