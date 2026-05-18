@@ -89,7 +89,11 @@ export async function importBackup(file: File): Promise<{ records: number }> {
   let count = 0;
   for (const record of data.records) {
     try {
-      const normalized = { ...record, timestamp: normalizeTimestamp(record.timestamp) };
+      const normalized = {
+        ...record,
+        id: crypto.randomUUID(), // Generate new ID to avoid conflicts with existing records
+        timestamp: normalizeTimestamp(record.timestamp),
+      };
       await addRecord(normalized);
       count++;
     } catch {

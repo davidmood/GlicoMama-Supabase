@@ -68,12 +68,15 @@ export default function SettingsPage({ darkMode, onToggleDarkMode, onSettingsCha
     const file = e.target.files?.[0];
     if (!file) return;
     try {
+      showStatus('Importando...');
       const result = await importBackup(file);
       showStatus(`Importados ${result.records} registros com sucesso!`);
       loadData();
       onSettingsChange();
-    } catch {
-      showStatus('Erro: arquivo de backup inválido');
+    } catch (err) {
+      console.error('Import error:', err);
+      const msg = err instanceof Error ? err.message : 'Arquivo de backup inválido';
+      showStatus(`Erro ao importar: ${msg}`);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
