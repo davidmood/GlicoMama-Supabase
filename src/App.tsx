@@ -15,7 +15,7 @@ import Disclaimer from './components/Disclaimer';
 import AuthPage from './pages/AuthPage';
 import { getSettings, addRecord, saveSettings } from './services/database';
 import { supabase } from './services/supabase';
-import { requestNotificationPermission, scheduleGlucoseReminders } from './services/notifications';
+import { requestNotificationPermission, scheduleGlucoseReminders, checkMissedNotifications } from './services/notifications';
 import { scheduleAutoBackup } from './services/backup';
 import Onboarding from './components/Onboarding';
 import type { GlucoseRecord, UserPhase, SensorType, InsulinUse } from './types';
@@ -55,7 +55,18 @@ export default function App() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Check for missed notifications when app comes back to foreground
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkMissedNotifications((msg) => addToast(msg));
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   const loadSettings = useCallback(async () => {

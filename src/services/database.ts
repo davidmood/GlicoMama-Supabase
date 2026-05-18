@@ -246,6 +246,19 @@ export async function addReminder(reminder: Reminder): Promise<void> {
   if (error) throw error;
 }
 
+export async function updateReminder(reminder: Reminder): Promise<void> {
+  const { error } = await supabase
+    .from('reminders')
+    .update({
+      time: reminder.time,
+      label: reminder.label,
+      enabled: reminder.enabled,
+    })
+    .eq('id', reminder.id);
+
+  if (error) throw error;
+}
+
 export async function removeReminder(id: string): Promise<void> {
   const { error } = await supabase
     .from('reminders')
