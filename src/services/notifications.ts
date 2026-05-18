@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 
 const PENDING_KEY = 'glm_pending_notifications';
 const FCM_TOKEN_KEY = 'glm_fcm_token';
-const PUSH_API_URL = import.meta.env.VITE_PUSH_API_URL || '';
+const PUSH_API_URL = import.meta.env.VITE_PUSH_API_URL || 'https://glicomama-supabase.onrender.com';
 
 interface PendingNotification {
   id: string;
