@@ -1,5 +1,6 @@
 import { getAllRecords, getSettings, addRecord, saveSettings } from './database';
 import type { GlucoseRecord, UserSettings } from '../types';
+import { localInputToUtc } from '../types';
 
 const BACKUP_KEY_PREFIX = 'glicomama_backup_';
 const BACKUP_LAST_KEY = 'glicomama_last_backup';
@@ -34,6 +35,18 @@ export function downloadBackup(backup: BackupData): void {
   URL.revokeObjectURL(url);
 }
 
+// Normalize timestamp: old version stored local time without timezone (e.g. "2026-05-15T15:00")
+// New version stores UTC ISO (e.g. "2026-05-15T18:00:00.000Z").
+// If the timestamp doesn't end in "Z" and doesn't contain a timezone offset (+/-),
+// it's a local time from the old version — convert it to UTC.
+function normalizeTimestamp(ts: string): string {
+  if (!ts) return ts;
+  // Already UTC or has timezone offset
+  if (ts.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(ts)) return ts;
+  // Old format: local time without timezone — convert to UTC
+  return localInputToUtc(ts);
+}
+
 export async function importBackup(file: File): Promise<{ records: number }> {
   const text = await file.text();
   const data = JSON.parse(text) as BackupData;
@@ -53,7 +66,8 @@ export async function importBackup(file: File): Promise<{ records: number }> {
 
   let count = 0;
   for (const record of data.records) {
-    await addRecord(record);
+    const normalized = { ...record, timestamp: normalizeTimestamp(record.timestamp) };
+    await addRecord(normalized);
     count++;
   }
 
@@ -142,7 +156,8 @@ export async function restoreAutoBackup(key: string): Promise<{ records: number 
 
   let count = 0;
   for (const record of data.records) {
-    await addRecord(record);
+    const normalized = { ...record, timestamp: normalizeTimestamp(record.timestamp) };
+    await addRecord(normalized);
     count++;
   }
 
