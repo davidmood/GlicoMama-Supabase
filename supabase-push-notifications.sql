@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS scheduled_notifications (
   body TEXT NOT NULL,
   fire_at TIMESTAMPTZ NOT NULL,
   sent BOOLEAN NOT NULL DEFAULT false,
+  reminder_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
