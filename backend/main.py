@@ -12,27 +12,11 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("glicomama-push")
 
-# Lazy initialization — all heavy imports and setup happen in lifespan
-_firebase_ready = False
 _supabase_client = None
 _scheduler = None
 
-
-def _init_firebase():
-    global _firebase_ready
-    try:
-        import firebase_admin
-        from firebase_admin import credentials
-        creds_json = os.environ.get("FIREBASE_CREDENTIALS", "")
-        if not creds_json:
-            logger.warning("FIREBASE_CREDENTIALS not set")
-            return
-        cred = credentials.Certificate(json.loads(creds_json))
-        firebase_admin.initialize_app(cred)
-        _firebase_ready = True
-        logger.info("Firebase initialized")
-    except Exception as e:
-        logger.error(f"Firebase init error: {e}")
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
+VAPID_CLAIMS = {"sub": "mailto:glicomama@noreply.com"}
 
 
 def _init_supabase():
@@ -50,29 +34,25 @@ def _init_supabase():
         logger.error(f"Supabase init error: {e}")
 
 
-def send_fcm(token: str, title: str, body: str) -> bool:
-    if not _firebase_ready:
+def send_push(subscription_json: str, title: str, body: str) -> bool:
+    """Send push notification using standard Web Push protocol."""
+    if not VAPID_PRIVATE_KEY:
+        logger.error("VAPID_PRIVATE_KEY not set")
         return False
     try:
-        from firebase_admin import messaging
-        message = messaging.Message(
-            notification=messaging.Notification(title=title, body=body),
-            webpush=messaging.WebpushConfig(
-                notification=messaging.WebpushNotification(
-                    title=title,
-                    body=body,
-                    icon="/logo-192.png",
-                    badge="/logo-192.png",
-                    require_interaction=True,
-                ),
-            ),
-            token=token,
+        from pywebpush import webpush, WebPushException
+        subscription_info = json.loads(subscription_json)
+        webpush(
+            subscription_info=subscription_info,
+            data=json.dumps({"title": title, "body": body}),
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims=VAPID_CLAIMS,
         )
-        messaging.send(message)
-        logger.info(f"Sent push to token={token[:20]}...")
+        endpoint = subscription_info.get("endpoint", "")
+        logger.info(f"Push sent to endpoint={endpoint[:60]}...")
         return True
     except Exception as e:
-        logger.error(f"FCM send error: {e}")
+        logger.error(f"Web Push send error: {e}")
         return False
 
 
@@ -92,7 +72,8 @@ def poll_scheduled_notifications():
             logger.info(f"Found {len(rows)} pending notification(s)")
 
         for row in rows:
-            ok = send_fcm(row["fcm_token"], row["title"], row["body"])
+            token = row["fcm_token"]
+            ok = send_push(token, row["title"], row["body"])
             _supabase_client.table("scheduled_notifications") \
                 .update({"sent": True}) \
                 .eq("id", row["id"]) \
@@ -107,7 +88,7 @@ def poll_scheduled_notifications():
             if reminder_id:
                 next_fire = datetime.fromisoformat(row["fire_at"].replace("Z", "+00:00")) + timedelta(days=1)
                 _supabase_client.table("scheduled_notifications").insert({
-                    "fcm_token": row["fcm_token"],
+                    "fcm_token": token,
                     "title": row["title"],
                     "body": row["body"],
                     "fire_at": next_fire.isoformat(),
@@ -133,8 +114,9 @@ def keep_alive():
 @asynccontextmanager
 async def lifespan(a: FastAPI):
     global _scheduler
-    _init_firebase()
     _init_supabase()
+    if not VAPID_PRIVATE_KEY:
+        logger.warning("VAPID_PRIVATE_KEY not set — push notifications will fail")
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         _scheduler = BackgroundScheduler()
@@ -177,7 +159,7 @@ class SaveTokenRequest(BaseModel):
 
 class ReminderSync(BaseModel):
     id: str
-    time: str  # "HH:MM"
+    time: str
     label: str
     enabled: bool
 
@@ -186,12 +168,16 @@ class SyncRemindersRequest(BaseModel):
     user_id: str
     fcm_token: str
     reminders: list[ReminderSync]
-    tz_offset_minutes: int  # e.g. -180 for BRT (UTC-3)
+    tz_offset_minutes: int
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "firebase": _firebase_ready, "supabase": bool(_supabase_client)}
+    return {
+        "status": "ok",
+        "supabase": bool(_supabase_client),
+        "vapid": bool(VAPID_PRIVATE_KEY),
+    }
 
 
 @app.post("/api/schedule")
@@ -213,13 +199,13 @@ def schedule_notification(req: ScheduleRequest):
 
 @app.post("/api/test")
 def test_notification(req: TestRequest):
-    ok = send_fcm(
+    ok = send_push(
         req.fcm_token,
         "GlicoMama - Teste",
-        "As notificações push estão funcionando! 🎉",
+        "As notificações push estão funcionando!",
     )
     if not ok:
-        raise HTTPException(500, "Falha ao enviar notificação")
+        raise HTTPException(500, "Falha ao enviar notificação push")
     return {"status": "sent"}
 
 
@@ -242,7 +228,7 @@ def sync_reminders(req: SyncRemindersRequest):
     if not _supabase_client:
         raise HTTPException(500, "Supabase not configured")
     try:
-        # Delete all pending recurring notifications for this user's reminders
+        # Delete all pending recurring notifications for this user's token
         existing = _supabase_client.table("scheduled_notifications") \
             .select("id, reminder_id") \
             .eq("sent", False) \
@@ -261,23 +247,22 @@ def sync_reminders(req: SyncRemindersRequest):
         for rem in req.reminders:
             if not rem.enabled:
                 continue
-            # Parse HH:MM in user's local time
             parts = rem.time.split(":")
             if len(parts) != 2:
                 continue
             hour, minute = int(parts[0]), int(parts[1])
 
             # Calculate next fire time in UTC
-            user_now = now_utc + tz_delta  # current time in user's timezone
+            user_now = now_utc + tz_delta
             fire_local = user_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if fire_local <= user_now:
-                fire_local += timedelta(days=1)  # schedule for tomorrow
+                fire_local += timedelta(days=1)
             fire_utc = fire_local - tz_delta
 
             _supabase_client.table("scheduled_notifications").insert({
                 "fcm_token": req.fcm_token,
                 "title": "GlicoMama - Lembrete",
-                "body": f"⏰ {rem.time} — {rem.label}",
+                "body": f"\u23f0 {rem.time} \u2014 {rem.label}",
                 "fire_at": fire_utc.isoformat(),
                 "sent": False,
                 "reminder_id": rem.id,
