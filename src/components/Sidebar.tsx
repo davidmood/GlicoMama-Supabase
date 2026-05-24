@@ -11,7 +11,10 @@ import {
   Moon,
   Sun,
   LogOut,
+  Users,
+  Share2,
 } from 'lucide-react';
+import type { UserRole } from '../types';
 
 interface SidebarProps {
   currentPage: string;
@@ -22,9 +25,10 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onLogout?: () => void;
+  userRole?: UserRole;
 }
 
-const navItems = [
+const patientNavItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'records', label: 'Registros', icon: List },
   { id: 'new-record', label: 'Novo Registro', icon: PlusCircle },
@@ -32,6 +36,14 @@ const navItems = [
   { id: 'reports', label: 'Relatórios', icon: FileText },
   { id: 'goals', label: 'Metas', icon: Target },
   { id: 'reminders', label: 'Lembretes', icon: Bell },
+  { id: 'share', label: 'Compartilhar', icon: Share2 },
+  { id: 'profile', label: 'Perfil', icon: User },
+  { id: 'settings', label: 'Configurações', icon: Settings },
+];
+
+const viewerNavItems = [
+  { id: 'patients', label: 'Pacientes', icon: Users },
+  { id: 'share', label: 'Adicionar Paciente', icon: Share2 },
   { id: 'profile', label: 'Perfil', icon: User },
   { id: 'settings', label: 'Configurações', icon: Settings },
 ];
@@ -45,7 +57,9 @@ export default function Sidebar({
   isOpen,
   onClose,
   onLogout,
+  userRole = 'paciente',
 }: SidebarProps) {
+  const navItems = userRole === 'paciente' ? patientNavItems : viewerNavItems;
   const initials = userName
     .split(' ')
     .map((n) => n[0])

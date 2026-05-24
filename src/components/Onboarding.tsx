@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
-import type { UserPhase, SensorType, InsulinUse } from '../types';
+import type { UserPhase, SensorType, InsulinUse, UserRole } from '../types';
 import { USER_PHASES, SENSOR_TYPES } from '../types';
 
 interface OnboardingProps {
@@ -9,37 +9,50 @@ interface OnboardingProps {
     phase: UserPhase;
     sensor: SensorType;
     insulinUse: InsulinUse;
+    role: UserRole;
   }) => void;
 }
 
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
+  const [role, setRole] = useState<UserRole | null>(null);
   const [phase, setPhase] = useState<UserPhase | null>(null);
   const [sensor, setSensor] = useState<SensorType | null>(null);
   const [usesInsulin, setUsesInsulin] = useState<boolean | null>(null);
   const [insulinType, setInsulinType] = useState<'basal' | 'rapida' | 'ambas' | null>(null);
 
+  const isPatientRole = role === 'paciente';
+  const totalSteps = isPatientRole ? 6 : 3;
+
   const canNext = () => {
     switch (step) {
       case 0: return true;
       case 1: return name.trim().length > 0;
-      case 2: return phase !== null;
-      case 3: return sensor !== null;
-      case 4: return usesInsulin !== null && (usesInsulin === false || insulinType !== null);
+      case 2: return role !== null;
+      default: break;
+    }
+    if (!isPatientRole) return true;
+    switch (step) {
+      case 3: return phase !== null;
+      case 4: return sensor !== null;
+      case 5: return usesInsulin !== null && (usesInsulin === false || insulinType !== null);
       default: return false;
     }
   };
 
+  const lastStep = isPatientRole ? 5 : 2;
+
   const handleNext = () => {
-    if (step < 4) {
+    if (step < lastStep) {
       setStep(step + 1);
     } else {
       onComplete({
         name: name.trim(),
-        phase: phase!,
-        sensor: sensor!,
-        insulinUse: usesInsulin ? insulinType! : 'nao',
+        phase: isPatientRole ? phase! : 'outro',
+        sensor: isPatientRole ? sensor! : 'Não utilizo sensor',
+        insulinUse: isPatientRole && usesInsulin ? insulinType! : 'nao',
+        role: role!,
       });
     }
   };
@@ -53,7 +66,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       <div className="onboarding-container">
         {/* Progress dots */}
         <div className="onboarding-progress">
-          {[0, 1, 2, 3, 4].map((i) => (
+          {Array.from({ length: totalSteps }, (_, i) => (
             <div
               key={i}
               className={`onboarding-dot ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`}
@@ -90,8 +103,39 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         )}
 
-        {/* Step 2: Phase */}
+        {/* Step 2: Role */}
         {step === 2 && (
+          <div className="onboarding-step">
+            <h2>Qual seu perfil?</h2>
+            <p className="onboarding-subtitle">Isso define sua experiência no app</p>
+            <div className="onboarding-options">
+              <button
+                className={`onboarding-option ${role === 'paciente' ? 'selected' : ''}`}
+                onClick={() => setRole('paciente')}
+              >
+                <div className="onboarding-option-label">Paciente</div>
+                <div className="onboarding-option-desc">Registro de glicemia, refeições e amamentação</div>
+              </button>
+              <button
+                className={`onboarding-option ${role === 'medico' ? 'selected' : ''}`}
+                onClick={() => setRole('medico')}
+              >
+                <div className="onboarding-option-label">Médico(a) / Profissional de Saúde</div>
+                <div className="onboarding-option-desc">Visualizar dados de pacientes vinculados</div>
+              </button>
+              <button
+                className={`onboarding-option ${role === 'familiar' ? 'selected' : ''}`}
+                onClick={() => setRole('familiar')}
+              >
+                <div className="onboarding-option-label">Familiar / Cônjuge</div>
+                <div className="onboarding-option-desc">Acompanhar dados de um ente querido</div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Phase (patient only) */}
+        {step === 3 && isPatientRole && (
           <div className="onboarding-step">
             <h2>Em qual fase você está?</h2>
             <div className="onboarding-options">
@@ -111,8 +155,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         )}
 
-        {/* Step 3: Sensor */}
-        {step === 3 && (
+        {/* Step 4: Sensor (patient only) */}
+        {step === 4 && isPatientRole && (
           <div className="onboarding-step">
             <h2>Você utiliza?</h2>
             <div className="onboarding-options">
@@ -129,8 +173,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         )}
 
-        {/* Step 4: Insulin */}
-        {step === 4 && (
+        {/* Step 5: Insulin (patient only) */}
+        {step === 5 && isPatientRole && (
           <div className="onboarding-step">
             <h2>Usa insulina?</h2>
             <div className="onboarding-options" style={{ gap: 10 }}>
@@ -190,8 +234,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             onClick={handleNext}
             disabled={!canNext()}
           >
-            {step === 0 ? 'Começar' : step === 4 ? 'Finalizar' : 'Próximo'}
-            {step < 4 && <ChevronRight size={16} />}
+            {step === 0 ? 'Começar' : step === lastStep ? 'Finalizar' : 'Próximo'}
+            {step < lastStep && <ChevronRight size={16} />}
           </button>
         </div>
       </div>

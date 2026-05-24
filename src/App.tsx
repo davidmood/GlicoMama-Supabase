@@ -18,8 +18,11 @@ import { supabase } from './services/supabase';
 import { requestNotificationPermission, scheduleGlucoseReminders, checkMissedNotifications, setupForegroundHandler, syncRemindersWithBackend } from './services/notifications';
 import { scheduleAutoBackup } from './services/backup';
 import Onboarding from './components/Onboarding';
-import type { GlucoseRecord, UserPhase, SensorType, InsulinUse } from './types';
+import type { GlucoseRecord, UserPhase, SensorType, InsulinUse, UserRole } from './types';
 import type { Session } from '@supabase/supabase-js';
+import PatientsPage from './pages/PatientsPage';
+import PatientDetailPage from './pages/PatientDetailPage';
+import SharePage from './pages/SharePage';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -33,6 +36,8 @@ export default function App() {
   const [toasts, setToasts] = useState<{ id: string; message: string }[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [userRole, setUserRole] = useState<UserRole>('paciente');
+  const [viewingPatientId, setViewingPatientId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -80,6 +85,7 @@ export default function App() {
     const s = await getSettings();
     setUserName(s.name);
     setDarkMode(s.darkMode);
+    setUserRole(s.role || 'paciente');
     if (!s.onboardingCompleted) {
       setShowOnboarding(true);
     }
@@ -91,6 +97,7 @@ export default function App() {
     phase: UserPhase;
     sensor: SensorType;
     insulinUse: InsulinUse;
+    role: UserRole;
   }) => {
     const s = await getSettings();
     await saveSettings({
@@ -99,9 +106,11 @@ export default function App() {
       phase: data.phase,
       sensor: data.sensor,
       insulinUse: data.insulinUse,
+      role: data.role,
       onboardingCompleted: true,
     });
     setUserName(data.name);
+    setUserRole(data.role);
     setShowOnboarding(false);
     setRefreshKey((k) => k + 1);
   };
@@ -120,8 +129,12 @@ export default function App() {
   const handleNavigate = (page: string) => {
     if (page === 'new-record') {
       setShowNewRecord(true);
+    } else if (page.startsWith('patient-detail:')) {
+      setViewingPatientId(page.split(':')[1]);
+      setCurrentPage('patient-detail');
     } else {
       setCurrentPage(page);
+      if (page !== 'patient-detail') setViewingPatientId(null);
     }
   };
 
@@ -176,6 +189,14 @@ export default function App() {
         return <ProfilePage onSettingsChange={refreshAll} />;
       case 'settings':
         return <SettingsPage darkMode={darkMode} onToggleDarkMode={toggleDarkMode} onSettingsChange={refreshAll} />;
+      case 'patients':
+        return <PatientsPage onNavigate={handleNavigate} />;
+      case 'patient-detail':
+        return viewingPatientId
+          ? <PatientDetailPage patientId={viewingPatientId} onBack={() => handleNavigate('patients')} />
+          : <PatientsPage onNavigate={handleNavigate} />;
+      case 'share':
+        return <SharePage />;
       default:
         return <DashboardPage onNavigate={handleNavigate} />;
     }
@@ -227,6 +248,7 @@ export default function App() {
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onLogout={handleLogout}
+        userRole={userRole}
       />
 
       <main className="main-content">
