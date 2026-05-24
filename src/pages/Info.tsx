@@ -56,7 +56,7 @@ const techs: string[] = [
   "FastAPI",
 ];
 
-export default function Info(): JSX.Element {
+export default function Info() {
   return (
     <div className="min-h-screen bg-[#090412] text-white overflow-hidden">
       {/* Background */}
