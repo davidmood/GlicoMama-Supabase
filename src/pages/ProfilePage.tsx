@@ -3,7 +3,7 @@ import { User, Save, Activity, Stethoscope, Shield } from 'lucide-react';
 import { getSettings, saveSettings } from '../services/database';
 import type { UserSettings } from '../types';
 import { USER_PHASES, SENSOR_TYPES } from '../types';
-import type { UserPhase, SensorType, InsulinUse } from '../types';
+import type { UserPhase, SensorType, InsulinUse, UserRole } from '../types';
 
 interface ProfilePageProps {
   onSettingsChange: () => void;
@@ -80,6 +80,22 @@ export default function ProfilePage({ onSettingsChange }: ProfilePageProps) {
             value={settings.name}
             onChange={(e) => setSettings({ ...settings, name: e.target.value })}
           />
+        </div>
+
+        <div className="form-group">
+          <label>Perfil</label>
+          <select
+            className="form-input"
+            value={settings.role ?? 'paciente'}
+            onChange={(e) => setSettings({ ...settings, role: e.target.value as UserRole })}
+          >
+            <option value="paciente">Paciente</option>
+            <option value="medico">Médico(a) / Profissional de Saúde</option>
+            <option value="familiar">Familiar / Cônjuge</option>
+          </select>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Alterar o perfil muda o menu lateral e funcionalidades disponíveis
+          </span>
         </div>
 
         <div className="form-group">
