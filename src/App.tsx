@@ -23,7 +23,6 @@ import type { Session } from '@supabase/supabase-js';
 import PatientsPage from './pages/PatientsPage';
 import PatientDetailPage from './pages/PatientDetailPage';
 import SharePage from './pages/SharePage';
-import Info from './pages/Info';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
