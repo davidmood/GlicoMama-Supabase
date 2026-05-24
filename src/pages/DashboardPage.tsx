@@ -103,7 +103,12 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const timeInRange = useMemo(() => {
     const min = settings?.glucoseTargetMin ?? 70;
     const max = settings?.glucoseAttentionMax ?? 140;
-    const vals = weekRecords.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
+    const vals: number[] = [];
+    weekRecords.forEach(r => {
+      if (r.glucosePre) vals.push(r.glucosePre);
+      if (r.glucosePos1h) vals.push(r.glucosePos1h);
+      if (r.glucosePos2h) vals.push(r.glucosePos2h);
+    });
     if (vals.length === 0) return 0;
     const inRange = vals.filter((v) => v >= min && v <= max).length;
     return Math.round((inRange / vals.length) * 100);
@@ -244,23 +249,29 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
 
   // Donut chart: time in range
   const donutData = useMemo(() => {
-    const min = settings?.glucoseTargetMin ?? 70;
-    const max = settings?.glucoseTargetMax ?? 140;
-    const vals = weekRecords.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
+    const lowMax = settings?.glucoseLowMax ?? 69;
+    const targetMin = settings?.glucoseTargetMin ?? 70;
+    const attentionMax = settings?.glucoseAttentionMax ?? 140;
+    const vals: number[] = [];
+    weekRecords.forEach(r => {
+      if (r.glucosePre) vals.push(r.glucosePre);
+      if (r.glucosePos1h) vals.push(r.glucosePos1h);
+      if (r.glucosePos2h) vals.push(r.glucosePos2h);
+    });
 
     if (vals.length === 0) return { labels: ['Sem dados'], datasets: [{ data: [1], backgroundColor: ['#3d2d5c'] }] };
 
-    const low = vals.filter((v) => v < min).length;
-    const inRange = vals.filter((v) => v >= min && v <= max).length;
-    const high = vals.filter((v) => v > max && v <= 250).length;
+    const low = vals.filter((v) => v <= lowMax).length;
+    const inRange = vals.filter((v) => v >= targetMin && v <= attentionMax).length;
+    const high = vals.filter((v) => v > attentionMax && v <= 250).length;
     const veryHigh = vals.filter((v) => v > 250).length;
 
     const total = vals.length;
     return {
       labels: [
-        `< ${min} mg/dL`,
-        `${min} - ${max} mg/dL`,
-        `${max} - 250 mg/dL`,
+        `< ${targetMin} mg/dL`,
+        `${targetMin} - ${attentionMax} mg/dL`,
+        `${attentionMax} - 250 mg/dL`,
         `> 250 mg/dL`,
       ],
       datasets: [
@@ -309,7 +320,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div className="stat-card" onClick={() => onNavigate('charts')} style={{ cursor: 'pointer' }}>
           <div className="label"><TrendingUp size={12} /> Média de Glicemia</div>
           <div className="value">{avgGlucose || '—'}</div>
-          <div className="unit">mg/dL</div>
+          <div className="unit">mg/dL (semana)</div>
         </div>
         <div className="stat-card">
           <div className="label">Tempo em Faixa</div>

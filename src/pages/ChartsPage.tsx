@@ -150,46 +150,47 @@ export default function ChartsPage() {
   // Time in range donut with detailed labels
   const lowMax = settings?.glucoseLowMax ?? 69;
   const targetMin = settings?.glucoseTargetMin ?? 70;
-  const targetMax = settings?.glucoseTargetMax ?? 100;
   const attentionMax = settings?.glucoseAttentionMax ?? 140;
 
   const rangeDonut = useMemo(() => {
-    const vals = periodRecords.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
+    const vals: number[] = [];
+    periodRecords.forEach(r => {
+      if (r.glucosePre) vals.push(r.glucosePre);
+      if (r.glucosePos1h) vals.push(r.glucosePos1h);
+      if (r.glucosePos2h) vals.push(r.glucosePos2h);
+    });
     if (vals.length === 0) return null;
 
     const low = vals.filter((v) => v <= lowMax).length;
-    const ideal = vals.filter((v) => v >= targetMin && v <= targetMax).length;
-    const attention = vals.filter((v) => v > targetMax && v <= attentionMax).length;
-    const high = vals.filter((v) => v > attentionMax).length;
+    const inRange = vals.filter((v) => v >= targetMin && v <= attentionMax).length;
+    const high = vals.filter((v) => v > attentionMax && v <= 250).length;
+    const veryHigh = vals.filter((v) => v > 250).length;
     const t = vals.length;
 
     const lowPct = Math.round(low / t * 100);
-    const idealPct = Math.round(ideal / t * 100);
-    const attPct = Math.round(attention / t * 100);
+    const inRangePct = Math.round(inRange / t * 100);
     const highPct = Math.round(high / t * 100);
+    const veryHighPct = Math.round(veryHigh / t * 100);
 
     return {
       data: {
         labels: [
-          `Baixa (≤${lowMax}): ${lowPct}%`,
-          `Ideal (${targetMin}–${targetMax}): ${idealPct}%`,
-          `Atenção (${targetMax + 1}–${attentionMax}): ${attPct}%`,
-          `Alta (>${attentionMax}): ${highPct}%`,
+          `< ${targetMin} mg/dL`,
+          `${targetMin} - ${attentionMax} mg/dL`,
+          `${attentionMax} - 250 mg/dL`,
+          `> 250 mg/dL`,
         ],
         datasets: [{
-          data: [lowPct, idealPct, attPct, highPct],
+          data: [lowPct, inRangePct, highPct, veryHighPct],
           backgroundColor: ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444'],
           cutout: '65%',
           borderWidth: 0,
         }],
       },
       total: t,
-      lowPct,
-      idealPct,
-      attPct,
-      highPct,
+      inRangePct,
     };
-  }, [periodRecords, lowMax, targetMin, targetMax, attentionMax]);
+  }, [periodRecords, lowMax, targetMin, attentionMax]);
 
   const dailyChartOpts = {
     responsive: true,
@@ -317,7 +318,7 @@ export default function ChartsPage() {
                   textAlign: 'center',
                   pointerEvents: 'none',
                 }}>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#22c55e' }}>{rangeDonut.idealPct}%</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#22c55e' }}>{rangeDonut.inRangePct}%</div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>em faixa</div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{rangeDonut.total} medições</div>
                 </div>

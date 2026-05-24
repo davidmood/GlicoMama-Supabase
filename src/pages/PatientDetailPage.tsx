@@ -112,32 +112,28 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     return values;
   }, [periodRecords]);
 
-  const preValues = useMemo(() =>
-    periodRecords.filter(r => r.glucosePre).map(r => r.glucosePre!),
-  [periodRecords]);
-
-  const avg = preValues.length > 0
-    ? Math.round(preValues.reduce((a, b) => a + b, 0) / preValues.length)
+  const avg = glucoseValues.length > 0
+    ? Math.round(glucoseValues.reduce((a, b) => a + b, 0) / glucoseValues.length)
     : 0;
 
   const tirRanges: TirRanges = useMemo(() => ({
     min: settings.glucoseTargetMin,
-    max: settings.glucoseTargetMax,
+    max: settings.glucoseAttentionMax,
   }), [settings]);
 
-  const inRange = preValues.filter(v => v >= tirRanges.min && v <= tirRanges.max).length;
-  const tirPct = preValues.length > 0 ? Math.round((inRange / preValues.length) * 100) : 0;
+  const inRange = glucoseValues.filter(v => v >= tirRanges.min && v <= tirRanges.max).length;
+  const tirPct = glucoseValues.length > 0 ? Math.round((inRange / glucoseValues.length) * 100) : 0;
 
   const distribution = useMemo(() => {
     let low = 0, inTarget = 0, attention = 0, high = 0;
-    preValues.forEach(v => {
+    glucoseValues.forEach(v => {
       if (v < tirRanges.min) low++;
       else if (v <= tirRanges.max) inTarget++;
       else if (v <= 250) attention++;
       else high++;
     });
     return { low, inTarget, attention, high };
-  }, [preValues, tirRanges]);
+  }, [glucoseValues, tirRanges]);
 
   const chartData = useMemo(() => {
     const sorted = [...periodRecords].sort((a, b) =>
@@ -193,7 +189,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     };
   }, [glucoseValues]);
 
-  const total = preValues.length || 1;
+  const total = glucoseValues.length || 1;
   const donutData = {
     labels: [
       `< ${tirRanges.min} mg/dL`,
