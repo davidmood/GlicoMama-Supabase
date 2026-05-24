@@ -113,19 +113,37 @@ export async function getMyPatients(): Promise<PatientLink[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data, error } = await supabase
+  const { data: links, error } = await supabase
     .from('patient_links')
-    .select('id, patient_id, viewer_id, role, created_at, profiles!patient_links_patient_id_fkey(name, cpf)')
+    .select('id, patient_id, viewer_id, role, created_at')
     .eq('viewer_id', user.id)
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('[Sharing] Failed to fetch patients:', error);
+    console.error('[Sharing] Failed to fetch patient links:', error);
     return [];
   }
 
-  return (data || []).map((row: Record<string, unknown>) => {
-    const profile = row.profiles as Record<string, unknown> | null;
+  if (!links || links.length === 0) return [];
+
+  const patientIds = links.map((l: Record<string, unknown>) => l.patient_id as string);
+
+  const { data: profiles, error: profileError } = await supabase
+    .from('profiles')
+    .select('id, name, cpf')
+    .in('id', patientIds);
+
+  if (profileError) {
+    console.error('[Sharing] Failed to fetch patient profiles:', profileError);
+  }
+
+  const profileMap = new Map<string, Record<string, unknown>>();
+  (profiles || []).forEach((p: Record<string, unknown>) => {
+    profileMap.set(p.id as string, p);
+  });
+
+  return links.map((row: Record<string, unknown>) => {
+    const profile = profileMap.get(row.patient_id as string);
     return {
       id: row.id as string,
       patientId: row.patient_id as string,
@@ -142,9 +160,9 @@ export async function getMyViewers(): Promise<PatientLink[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data, error } = await supabase
+  const { data: links, error } = await supabase
     .from('patient_links')
-    .select('id, patient_id, viewer_id, role, created_at, profiles!patient_links_viewer_id_fkey(name)')
+    .select('id, patient_id, viewer_id, role, created_at')
     .eq('patient_id', user.id)
     .order('created_at', { ascending: false });
 
@@ -153,8 +171,22 @@ export async function getMyViewers(): Promise<PatientLink[]> {
     return [];
   }
 
-  return (data || []).map((row: Record<string, unknown>) => {
-    const profile = row.profiles as Record<string, unknown> | null;
+  if (!links || links.length === 0) return [];
+
+  const viewerIds = links.map((l: Record<string, unknown>) => l.viewer_id as string);
+
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, name')
+    .in('id', viewerIds);
+
+  const profileMap = new Map<string, Record<string, unknown>>();
+  (profiles || []).forEach((p: Record<string, unknown>) => {
+    profileMap.set(p.id as string, p);
+  });
+
+  return links.map((row: Record<string, unknown>) => {
+    const profile = profileMap.get(row.viewer_id as string);
     return {
       id: row.id as string,
       patientId: row.patient_id as string,
