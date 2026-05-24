@@ -20,6 +20,8 @@ import { exportToCSV, exportToPDF } from '../services/export';
 import type { GlucoseRecord } from '../types';
 import { classifyGlucose } from '../types';
 
+type TirRanges = { min: number; max: number };
+
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler);
 
 interface PatientDetailPageProps {
@@ -114,27 +116,24 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     ? Math.round(glucoseValues.reduce((a, b) => a + b, 0) / glucoseValues.length)
     : 0;
 
-  const inTarget = glucoseValues.filter(v => v >= settings.glucoseTargetMin && v <= settings.glucoseTargetMax).length;
-  const targetPct = glucoseValues.length > 0 ? Math.round((inTarget / glucoseValues.length) * 100) : 0;
+  const tirRanges: TirRanges = useMemo(() => ({
+    min: settings.glucoseTargetMin,
+    max: settings.glucoseTargetMax,
+  }), [settings]);
+
+  const inRange = glucoseValues.filter(v => v >= tirRanges.min && v <= tirRanges.max).length;
+  const tirPct = glucoseValues.length > 0 ? Math.round((inRange / glucoseValues.length) * 100) : 0;
 
   const distribution = useMemo(() => {
-    let low = 0, normal = 0, attention = 0, high = 0;
+    let low = 0, inTarget = 0, attention = 0, high = 0;
     glucoseValues.forEach(v => {
-      const c = classifyGlucose(v, settings);
-      if (c.label === 'Baixa') low++;
-      else if (c.label === 'Dentro da meta') normal++;
-      else if (c.label === 'Atenção') attention++;
+      if (v < tirRanges.min) low++;
+      else if (v <= tirRanges.max) inTarget++;
+      else if (v <= 250) attention++;
       else high++;
     });
-    const total = glucoseValues.length || 1;
-    return {
-      low, normal, attention, high,
-      lowPct: Math.round((low / total) * 100),
-      normalPct: Math.round((normal / total) * 100),
-      attentionPct: Math.round((attention / total) * 100),
-      highPct: Math.round((high / total) * 100),
-    };
-  }, [glucoseValues, settings]);
+    return { low, inTarget, attention, high };
+  }, [glucoseValues, tirRanges]);
 
   const chartData = useMemo(() => {
     const sorted = [...periodRecords].sort((a, b) =>
@@ -193,15 +192,21 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
   const total = glucoseValues.length || 1;
   const donutData = {
     labels: [
-      `Dentro da meta (${Math.round((distribution.normal / total) * 100)}%)`,
-      `Atenção (${Math.round((distribution.attention / total) * 100)}%)`,
-      `Alta (${Math.round((distribution.high / total) * 100)}%)`,
-      `Baixa (${Math.round((distribution.low / total) * 100)}%)`,
+      `< ${tirRanges.min} mg/dL`,
+      `${tirRanges.min} - ${tirRanges.max} mg/dL`,
+      `${tirRanges.max} - 250 mg/dL`,
+      `> 250 mg/dL`,
     ],
     datasets: [{
-      data: [distribution.normal, distribution.attention, distribution.high, distribution.low],
-      backgroundColor: ['#22c55e', '#f59e0b', '#ef4444', '#3b82f6'],
+      data: [
+        Math.round((distribution.low / total) * 100),
+        Math.round((distribution.inTarget / total) * 100),
+        Math.round((distribution.attention / total) * 100),
+        Math.round((distribution.high / total) * 100),
+      ],
+      backgroundColor: ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444'],
       borderWidth: 0,
+      cutout: '70%',
     }],
   };
 
@@ -321,8 +326,8 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Média mg/dL</div>
         </div>
         <div className="card" style={{ textAlign: 'center', padding: 12 }}>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#22c55e' }}>{targetPct}%</div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Na Meta</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#22c55e' }}>{tirPct}%</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Em Faixa</div>
         </div>
         <div className="card" style={{ textAlign: 'center', padding: 12 }}>
           <div style={{ fontSize: 24, fontWeight: 700 }}>{periodRecords.length}</div>
@@ -373,26 +378,33 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
               Distribuição
             </h3>
           </div>
-          <div style={{ maxWidth: 240, margin: '0 auto' }}>
+          <div style={{ maxWidth: 240, margin: '0 auto', position: 'relative' }}>
             <Doughnut
               data={donutData}
               options={{
                 responsive: true,
                 plugins: {
-                  legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
-                  tooltip: {
-                    callbacks: {
-                      label: (ctx) => {
-                        const value = ctx.raw as number;
-                        const pct = Math.round((value / (glucoseValues.length || 1)) * 100);
-                        return ` ${ctx.label?.split('(')[0]?.trim()}: ${value} (${pct}%)`;
-                      },
+                  legend: {
+                    position: 'bottom',
+                    labels: {
+                      boxWidth: 10,
+                      font: { size: 11 },
+                      usePointStyle: true,
+                      pointStyle: 'circle',
+                      padding: 12,
                     },
                   },
                 },
-                cutout: '60%',
+                cutout: '70%',
               }}
             />
+            <div style={{
+              position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)',
+              textAlign: 'center', pointerEvents: 'none',
+            }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: '#22c55e' }}>{tirPct}%</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>em faixa</div>
+            </div>
           </div>
         </div>
       )}
