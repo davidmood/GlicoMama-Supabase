@@ -78,7 +78,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
   const settings = useMemo(() => ({
     glucoseLowMax: (profile?.glucose_low_max as number) ?? 69,
     glucoseTargetMin: (profile?.glucose_target_min as number) ?? 70,
-    glucoseTargetMax: (profile?.glucose_target_max as number) ?? 100,
+    glucoseTargetMax: (profile?.glucose_target_max as number) ?? 140,
     glucoseAttentionMax: (profile?.glucose_attention_max as number) ?? 140,
   }), [profile]);
 
@@ -112,8 +112,12 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     return values;
   }, [periodRecords]);
 
-  const avg = glucoseValues.length > 0
-    ? Math.round(glucoseValues.reduce((a, b) => a + b, 0) / glucoseValues.length)
+  const preValues = useMemo(() =>
+    periodRecords.filter(r => r.glucosePre).map(r => r.glucosePre!),
+  [periodRecords]);
+
+  const avg = preValues.length > 0
+    ? Math.round(preValues.reduce((a, b) => a + b, 0) / preValues.length)
     : 0;
 
   const tirRanges: TirRanges = useMemo(() => ({
@@ -121,19 +125,19 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     max: settings.glucoseTargetMax,
   }), [settings]);
 
-  const inRange = glucoseValues.filter(v => v >= tirRanges.min && v <= tirRanges.max).length;
-  const tirPct = glucoseValues.length > 0 ? Math.round((inRange / glucoseValues.length) * 100) : 0;
+  const inRange = preValues.filter(v => v >= tirRanges.min && v <= tirRanges.max).length;
+  const tirPct = preValues.length > 0 ? Math.round((inRange / preValues.length) * 100) : 0;
 
   const distribution = useMemo(() => {
     let low = 0, inTarget = 0, attention = 0, high = 0;
-    glucoseValues.forEach(v => {
+    preValues.forEach(v => {
       if (v < tirRanges.min) low++;
       else if (v <= tirRanges.max) inTarget++;
       else if (v <= 250) attention++;
       else high++;
     });
     return { low, inTarget, attention, high };
-  }, [glucoseValues, tirRanges]);
+  }, [preValues, tirRanges]);
 
   const chartData = useMemo(() => {
     const sorted = [...periodRecords].sort((a, b) =>
@@ -189,7 +193,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     };
   }, [glucoseValues]);
 
-  const total = glucoseValues.length || 1;
+  const total = preValues.length || 1;
   const donutData = {
     labels: [
       `< ${tirRanges.min} mg/dL`,
