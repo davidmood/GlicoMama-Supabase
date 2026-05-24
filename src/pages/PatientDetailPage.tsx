@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
-import { ArrowLeft, Activity, TrendingUp } from 'lucide-react';
-import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { ArrowLeft, Activity, TrendingUp, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, subDays, addDays, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Line, Doughnut } from 'react-chartjs-2';
 import {
@@ -16,6 +16,7 @@ import {
   Filler,
 } from 'chart.js';
 import { getPatientRecords, getPatientProfile } from '../services/sharing';
+import { exportToCSV, exportToPDF } from '../services/export';
 import type { GlucoseRecord } from '../types';
 import { classifyGlucose } from '../types';
 
@@ -55,6 +56,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(7);
+  const [dateOffset, setDateOffset] = useState(0);
 
   useEffect(() => {
     loadData();
@@ -79,13 +81,24 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
   }), [profile]);
 
   const periodRecords = useMemo(() => {
-    const start = startOfDay(subDays(new Date(), period));
-    const end = endOfDay(new Date());
+    const baseDate = addDays(new Date(), dateOffset);
+    const end = endOfDay(baseDate);
+    const start = startOfDay(subDays(baseDate, period - 1));
     return records.filter(r => {
       const d = new Date(r.timestamp);
       return d >= start && d <= end;
-    });
-  }, [records, period]);
+    }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [records, period, dateOffset]);
+
+  const periodLabel = useMemo(() => {
+    const baseDate = addDays(new Date(), dateOffset);
+    const end = endOfDay(baseDate);
+    const start = startOfDay(subDays(baseDate, period - 1));
+    if (period === 1) {
+      return format(start, "dd/MM/yyyy (EEEE)", { locale: ptBR });
+    }
+    return `${format(start, 'dd/MM')} - ${format(end, 'dd/MM')}`;
+  }, [period, dateOffset]);
 
   const glucoseValues = useMemo(() => {
     const values: number[] = [];
@@ -113,7 +126,14 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
       else if (c.label === 'Atenção') attention++;
       else high++;
     });
-    return { low, normal, attention, high };
+    const total = glucoseValues.length || 1;
+    return {
+      low, normal, attention, high,
+      lowPct: Math.round((low / total) * 100),
+      normalPct: Math.round((normal / total) * 100),
+      attentionPct: Math.round((attention / total) * 100),
+      highPct: Math.round((high / total) * 100),
+    };
   }, [glucoseValues, settings]);
 
   const chartData = useMemo(() => {
@@ -123,6 +143,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     const labels = sorted.map(r => format(new Date(r.timestamp), 'dd/MM HH:mm'));
     const preData = sorted.map(r => r.glucosePre ?? null);
     const pos1hData = sorted.map(r => r.glucosePos1h ?? null);
+    const pos2hData = sorted.map(r => r.glucosePos2h ?? null);
 
     return {
       labels,
@@ -145,12 +166,38 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
           fill: false,
           spanGaps: true,
         },
+        {
+          label: 'Pós 2h',
+          data: pos2hData,
+          borderColor: '#ef4444',
+          backgroundColor: 'rgba(239,68,68,0.1)',
+          tension: 0.3,
+          fill: false,
+          spanGaps: true,
+        },
       ],
     };
   }, [periodRecords]);
 
+  const yRange = useMemo(() => {
+    if (glucoseValues.length === 0) return { min: 40, max: 200 };
+    const minVal = Math.min(...glucoseValues);
+    const maxVal = Math.max(...glucoseValues);
+    const padding = 20;
+    return {
+      min: Math.max(0, Math.floor((minVal - padding) / 10) * 10),
+      max: Math.ceil((maxVal + padding) / 10) * 10,
+    };
+  }, [glucoseValues]);
+
+  const total = glucoseValues.length || 1;
   const donutData = {
-    labels: ['Dentro da meta', 'Atenção', 'Alta', 'Baixa'],
+    labels: [
+      `Dentro da meta (${Math.round((distribution.normal / total) * 100)}%)`,
+      `Atenção (${Math.round((distribution.attention / total) * 100)}%)`,
+      `Alta (${Math.round((distribution.high / total) * 100)}%)`,
+      `Baixa (${Math.round((distribution.low / total) * 100)}%)`,
+    ],
     datasets: [{
       data: [distribution.normal, distribution.attention, distribution.high, distribution.low],
       backgroundColor: ['#22c55e', '#f59e0b', '#ef4444', '#3b82f6'],
@@ -161,6 +208,16 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
   const patientName = (profile?.name as string) || 'Paciente';
   const phaseLabel = (profile?.phase as string) || '';
   const initials = patientName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+  function handlePeriodChange(newPeriod: number) {
+    setPeriod(newPeriod);
+    setDateOffset(0);
+  }
+
+  function handleNav(direction: 'prev' | 'next') {
+    if (direction === 'next' && dateOffset >= 0) return;
+    setDateOffset(prev => prev + (direction === 'prev' ? -period : period));
+  }
 
   if (loading) {
     return (
@@ -198,22 +255,63 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
         {phaseLabel && (
           <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{phaseLabel}</p>
         )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => exportToCSV(periodRecords)}
+            style={{ padding: '6px 12px', fontSize: 12 }}
+          >
+            <Download size={14} /> CSV
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => exportToPDF(periodRecords, patientName)}
+            style={{ padding: '6px 12px', fontSize: 12 }}
+          >
+            <Download size={14} /> PDF
+          </button>
+        </div>
       </div>
 
-      {/* Period selector */}
-      <div style={{
-        display: 'flex', gap: 8, marginBottom: 16, justifyContent: 'center',
-      }}>
-        {[7, 14, 30].map(d => (
+      {/* Period selector + navigation */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{
+          display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 8,
+        }}>
+          {[1, 7, 14, 30].map(d => (
+            <button
+              key={d}
+              className={`btn ${period === d ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => handlePeriodChange(d)}
+              style={{ padding: '6px 14px', fontSize: 12 }}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+        }}>
           <button
-            key={d}
-            className={`btn ${period === d ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setPeriod(d)}
-            style={{ padding: '6px 14px', fontSize: 12 }}
+            className="btn btn-secondary"
+            onClick={() => handleNav('prev')}
+            style={{ padding: '4px 8px', minWidth: 'auto' }}
           >
-            {d}d
+            <ChevronLeft size={16} />
           </button>
-        ))}
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', minWidth: 160, textAlign: 'center' }}>
+            {periodLabel}
+          </span>
+          <button
+            className="btn btn-secondary"
+            onClick={() => handleNav('next')}
+            disabled={dateOffset >= 0}
+            style={{ padding: '4px 8px', minWidth: 'auto', opacity: dateOffset >= 0 ? 0.4 : 1 }}
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -250,8 +348,8 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
                 plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
                 scales: {
                   y: {
-                    min: 40,
-                    max: 200,
+                    min: yRange.min,
+                    max: yRange.max,
                     grid: { color: 'rgba(255,255,255,0.05)' },
                     ticks: { font: { size: 10 } },
                   },
@@ -275,12 +373,23 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
               Distribuição
             </h3>
           </div>
-          <div style={{ maxWidth: 200, margin: '0 auto' }}>
+          <div style={{ maxWidth: 240, margin: '0 auto' }}>
             <Doughnut
               data={donutData}
               options={{
                 responsive: true,
-                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+                plugins: {
+                  legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
+                  tooltip: {
+                    callbacks: {
+                      label: (ctx) => {
+                        const value = ctx.raw as number;
+                        const pct = Math.round((value / (glucoseValues.length || 1)) * 100);
+                        return ` ${ctx.label?.split('(')[0]?.trim()}: ${value} (${pct}%)`;
+                      },
+                    },
+                  },
+                },
                 cutout: '60%',
               }}
             />
@@ -299,7 +408,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
           </p>
         ) : (
           <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-            {periodRecords.slice(0, 20).map(r => (
+            {periodRecords.slice(0, 30).map(r => (
               <div
                 key={r.id}
                 style={{
@@ -310,7 +419,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ fontWeight: 600 }}>{r.mealType}</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 8, flexShrink: 0, paddingRight: 8 }}>
                     {format(new Date(r.timestamp), "dd/MM 'às' HH:mm", { locale: ptBR })}
                   </span>
                 </div>
