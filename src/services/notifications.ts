@@ -1,4 +1,4 @@
-import { getFCMToken, onForegroundMessage } from './firebase';
+import { getFCMToken, onForegroundMessage, cleanupOldServiceWorkers } from './firebase';
 import { supabase } from './supabase';
 
 const PENDING_KEY = 'glm_pending_notifications';
@@ -25,41 +25,59 @@ function savePending(list: PendingNotification[]) {
   localStorage.setItem(PENDING_KEY, JSON.stringify(list));
 }
 
-// --- FCM Token Management ---
+// --- Push Token Management ---
 
-let cachedFCMToken: string | null = null;
+let cachedPushToken: string | null = null;
 
 export async function initializePushNotifications(): Promise<string | null> {
   try {
-    const token = await getFCMToken();
-    if (!token) return null;
+    // Clean up old Firebase SWs before getting push token
+    await cleanupOldServiceWorkers();
 
-    cachedFCMToken = token;
+    const token = await getFCMToken();
+    if (!token) {
+      console.warn('[Notifications] Failed to get push subscription');
+      return null;
+    }
+
+    console.log('[Notifications] Push token obtained, saving...');
+    cachedPushToken = token;
     localStorage.setItem(FCM_TOKEN_KEY, token);
 
     // Save token to Supabase profile
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
+      const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
+      if (error) {
+        console.error('[Notifications] Failed to save token to Supabase:', error);
+      } else {
+        console.log('[Notifications] Token saved to Supabase');
+      }
     }
 
     // Save token to backend
     if (PUSH_API_URL && user) {
-      fetch(`${PUSH_API_URL}/api/save-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id, fcm_token: token }),
-      }).catch(() => {});
+      try {
+        const res = await fetch(`${PUSH_API_URL}/api/save-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: user.id, fcm_token: token }),
+        });
+        console.log('[Notifications] Backend save-token:', res.ok ? 'OK' : res.status);
+      } catch (err) {
+        console.warn('[Notifications] Backend save-token failed:', err);
+      }
     }
 
     return token;
-  } catch {
+  } catch (err) {
+    console.error('[Notifications] initializePushNotifications error:', err);
     return null;
   }
 }
 
 export function getCachedFCMToken(): string | null {
-  if (cachedFCMToken) return cachedFCMToken;
+  if (cachedPushToken) return cachedPushToken;
   return localStorage.getItem(FCM_TOKEN_KEY);
 }
 
@@ -74,7 +92,6 @@ export function setupForegroundHandler(onNotify: (message: string) => void) {
 export async function requestNotificationPermission(): Promise<boolean> {
   if (!('Notification' in window)) return false;
   if (Notification.permission === 'granted') {
-    // Also initialize FCM when permission is already granted
     await initializePushNotifications();
     return true;
   }
@@ -117,7 +134,12 @@ async function showNotification(title: string, body: string) {
 
 // --- Test Notification ---
 
-export async function sendTestNotification() {
+export async function sendTestNotification(): Promise<'push' | 'local' | 'failed'> {
+  // Try to get/refresh token first
+  if (!getCachedFCMToken()) {
+    await initializePushNotifications();
+  }
+
   const token = getCachedFCMToken();
 
   // Try push notification via backend first
@@ -128,24 +150,35 @@ export async function sendTestNotification() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fcm_token: token }),
       });
-      if (res.ok) return;
-    } catch {
-      // Fallback to local
+      if (res.ok) {
+        console.log('[Notifications] Test push sent via backend');
+        return 'push';
+      }
+      const errText = await res.text();
+      console.warn('[Notifications] Test push failed:', res.status, errText);
+    } catch (err) {
+      console.warn('[Notifications] Test push error:', err);
     }
+  } else {
+    console.warn('[Notifications] No push token, using local fallback');
   }
 
   // Fallback to local notification
   showNotification(
-    'GlicoMama - Teste',
-    'As notificações estão funcionando corretamente!',
+    'GlicoMama - Teste (Local)',
+    'Notificação LOCAL funcionando. Push notifications precisam ser ativadas.',
   );
+  return 'local';
 }
 
 // --- Schedule Push Notifications via Backend ---
 
 async function schedulePushNotification(title: string, body: string, fireAt: Date): Promise<boolean> {
   const token = getCachedFCMToken();
-  if (!PUSH_API_URL || !token) return false;
+  if (!PUSH_API_URL || !token) {
+    console.warn('[Notifications] Cannot schedule push: no token or API URL');
+    return false;
+  }
 
   try {
     const res = await fetch(`${PUSH_API_URL}/api/schedule`, {
@@ -158,8 +191,10 @@ async function schedulePushNotification(title: string, body: string, fireAt: Dat
         fire_at: fireAt.toISOString(),
       }),
     });
+    console.log('[Notifications] Schedule push:', res.ok ? 'OK' : res.status);
     return res.ok;
-  } catch {
+  } catch (err) {
+    console.warn('[Notifications] Schedule push error:', err);
     return false;
   }
 }
@@ -259,6 +294,10 @@ export async function scheduleGlucoseReminders(
     savePending([...existing, ...notifications]);
   }
 
+  if (scheduled.length === 0 && (fire1h <= now || fire2h <= now)) {
+    console.log('[Notifications] Alarm times already passed, not scheduling');
+  }
+
   return scheduled;
 }
 
@@ -301,7 +340,10 @@ export function clearAllScheduledReminders() {
 
 export async function syncRemindersWithBackend(reminders: { id: string; time: string; label: string; enabled: boolean }[]): Promise<boolean> {
   const token = getCachedFCMToken();
-  if (!PUSH_API_URL || !token) return false;
+  if (!PUSH_API_URL || !token) {
+    console.warn('[Notifications] syncReminders: no token or API URL');
+    return false;
+  }
 
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -317,8 +359,10 @@ export async function syncRemindersWithBackend(reminders: { id: string; time: st
         tz_offset_minutes: -new Date().getTimezoneOffset(),
       }),
     });
+    console.log('[Notifications] syncReminders:', res.ok ? 'OK' : res.status);
     return res.ok;
-  } catch {
+  } catch (err) {
+    console.warn('[Notifications] syncReminders error:', err);
     return false;
   }
 }
