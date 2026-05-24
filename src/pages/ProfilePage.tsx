@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { User, Save, Activity, Stethoscope } from 'lucide-react';
+import { User, Save, Activity, Stethoscope, Shield } from 'lucide-react';
 import { getSettings, saveSettings } from '../services/database';
 import type { UserSettings } from '../types';
 import { USER_PHASES, SENSOR_TYPES } from '../types';
-import type { UserPhase, SensorType, InsulinUse } from '../types';
+import type { UserPhase, SensorType, InsulinUse, UserRole } from '../types';
 
 interface ProfilePageProps {
   onSettingsChange: () => void;
@@ -83,6 +83,40 @@ export default function ProfilePage({ onSettingsChange }: ProfilePageProps) {
         </div>
 
         <div className="form-group">
+          <label>Perfil</label>
+          <select
+            className="form-input"
+            value={settings.role ?? 'paciente'}
+            onChange={(e) => setSettings({ ...settings, role: e.target.value as UserRole })}
+          >
+            <option value="paciente">Paciente</option>
+            <option value="medico">Médico(a) / Profissional de Saúde</option>
+            <option value="familiar">Familiar / Cônjuge</option>
+          </select>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Alterar o perfil muda o menu lateral e funcionalidades disponíveis
+          </span>
+        </div>
+
+        <div className="form-group">
+          <label>CPF</label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="000.000.000-00"
+            value={settings.cpf ?? ''}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
+              let formatted = digits;
+              if (digits.length > 9) formatted = `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6,9)}-${digits.slice(9)}`;
+              else if (digits.length > 6) formatted = `${digits.slice(0,3)}.${digits.slice(3,6)}.${digits.slice(6)}`;
+              else if (digits.length > 3) formatted = `${digits.slice(0,3)}.${digits.slice(3)}`;
+              setSettings({ ...settings, cpf: formatted });
+            }}
+          />
+        </div>
+
+        <div className="form-group">
           <label>Fase</label>
           <select
             className="form-input"
@@ -96,6 +130,27 @@ export default function ProfilePage({ onSettingsChange }: ProfilePageProps) {
           </select>
         </div>
       </div>
+
+      {settings.role === 'medico' && (
+        <div className="card">
+          <div className="card-header">
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Shield size={18} style={{ color: 'var(--accent-purple)' }} />
+              Dados Profissionais
+            </h3>
+          </div>
+          <div className="form-group">
+            <label>CRM</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="CRM/UF 000000"
+              value={settings.crm ?? ''}
+              onChange={(e) => setSettings({ ...settings, crm: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-header">

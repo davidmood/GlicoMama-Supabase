@@ -104,6 +104,8 @@ export const SENSOR_TYPES: SensorType[] = [
   'Libre 1', 'Libre 2', 'Libre 3', 'Glicemia capilar', 'Dexcom', 'Outro sensor', 'Não utilizo sensor',
 ];
 
+export type UserRole = 'paciente' | 'medico' | 'familiar';
+
 export interface UserSettings {
   name: string;
   darkMode: boolean;
@@ -116,6 +118,27 @@ export interface UserSettings {
   sensor?: SensorType;
   insulinUse?: InsulinUse;
   onboardingCompleted?: boolean;
+  role?: UserRole;
+  cpf?: string;
+  crm?: string;
+}
+
+export interface ShareCode {
+  id: string;
+  userId: string;
+  code: string;
+  expiresAt: string;
+  used: boolean;
+}
+
+export interface PatientLink {
+  id: string;
+  patientId: string;
+  viewerId: string;
+  patientName: string;
+  patientCpf: string;
+  role: 'medico' | 'familiar';
+  createdAt: string;
 }
 
 export interface Reminder {

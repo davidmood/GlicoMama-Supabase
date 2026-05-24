@@ -179,6 +179,9 @@ export async function getSettings(): Promise<UserSettings> {
     sensor: profile.sensor || undefined,
     insulinUse: profile.insulin_use || undefined,
     onboardingCompleted: profile.onboarding_completed ?? false,
+    role: profile.role || 'paciente',
+    cpf: profile.cpf || undefined,
+    crm: profile.crm || undefined,
     reminders: (reminders || []).map((r: Record<string, unknown>) => ({
       id: r.id as string,
       time: r.time as string,
@@ -204,6 +207,9 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
     sensor: settings.sensor || null,
     insulin_use: settings.insulinUse || null,
     onboarding_completed: settings.onboardingCompleted ?? false,
+    role: settings.role || 'paciente',
+    cpf: settings.cpf || null,
+    crm: settings.crm || null,
     updated_at: new Date().toISOString(),
   };
 
