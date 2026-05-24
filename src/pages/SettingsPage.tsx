@@ -152,15 +152,26 @@ export default function SettingsPage({ darkMode, onToggleDarkMode, onSettingsCha
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <button className="btn btn-secondary" onClick={async () => {
+              showStatus('Ativando notificações...');
               const granted = await requestNotificationPermission();
-              showStatus(granted ? 'Notificações ativadas!' : 'Permissão de notificação negada. Ative nas configurações do navegador.');
+              if (granted) {
+                showStatus('Notificações push ativadas com sucesso!');
+              } else {
+                showStatus('Permissão de notificação negada. Ative nas configurações do navegador.');
+              }
             }}>
               <Bell size={14} /> Ativar Notificações
             </button>
             <button className="btn btn-primary" onClick={async () => {
               showStatus('Enviando notificação de teste...');
-              await sendTestNotification();
-              showStatus('Notificação de teste enviada!');
+              const result = await sendTestNotification();
+              if (result === 'push') {
+                showStatus('Notificação PUSH enviada! Deve chegar mesmo com app fechado.');
+              } else if (result === 'local') {
+                showStatus('Notificação local enviada. Ative Push para receber com app fechado.');
+              } else {
+                showStatus('Falha ao enviar notificação.');
+              }
             }}>
               <Bell size={14} /> Testar Notificação
             </button>
