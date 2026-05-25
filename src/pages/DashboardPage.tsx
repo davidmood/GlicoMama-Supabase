@@ -264,6 +264,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
     const high = vals.filter((v) => v > attentionMax).length;
 
     const total = vals.length;
+    const counts = [low, inRange, attention, high];
     return {
       labels: [
         `< ${targetMin} mg/dL`,
@@ -271,6 +272,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         `${targetMax + 1} - ${attentionMax} mg/dL`,
         `> ${attentionMax} mg/dL`,
       ],
+      counts,
       datasets: [
         {
           data: [
@@ -294,6 +296,22 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       legend: {
         position: 'bottom' as const,
         labels: { color: '#a78bca', usePointStyle: true, pointStyle: 'circle', padding: 12, font: { size: 11 } },
+      },
+      tooltip: {
+        backgroundColor: 'rgba(30, 20, 50, 0.95)',
+        titleFont: { size: 13 },
+        bodyFont: { size: 12 },
+        padding: 10,
+        callbacks: {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          title: (items: any[]) => items[0]?.label ?? '',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          label: (ctx: any) => {
+            const pct = ctx.raw ?? 0;
+            const count = (donutData as any).counts?.[ctx.dataIndex ?? 0] ?? 0;
+            return [`${pct}%`, `${count} registro${count !== 1 ? 's' : ''}`];
+          },
+        },
       },
     },
   };
@@ -432,6 +450,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
                           <>
                             {r.breastfeedingType}
                             {r.breastfeedingDuration ? ` - ${r.breastfeedingDuration} min` : ''}
+                            {r.extractedAmount ? ` (${r.extractedAmount} ml)` : ''}
                           </>
                         ) : '—'}
                       </td>

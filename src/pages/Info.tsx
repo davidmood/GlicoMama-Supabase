@@ -102,7 +102,7 @@ export default function Info() {
             💜 Diabetes Gestacional • Amamentação • Puerpério
           </div>
 
-          <h2 className="text-6xl md:text-7xl font-black leading-tight">
+          <h2 className="text-4xl sm:text-5xl md:text-7xl font-black leading-tight">
             O cuidado da{" "}
             <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
               mamãe
@@ -161,7 +161,7 @@ export default function Info() {
         >
           <div className="absolute w-[500px] h-[500px] bg-pink-500/20 blur-3xl rounded-full" />
 
-          <div className="relative w-[360px] rounded-[3.5rem] bg-black/30 border border-white/10 backdrop-blur-2xl p-4 shadow-[0_0_100px_rgba(236,72,153,0.25)]">
+          <div className="relative w-[280px] sm:w-[360px] rounded-[3.5rem] bg-black/30 border border-white/10 backdrop-blur-2xl p-4 shadow-[0_0_100px_rgba(236,72,153,0.25)]">
             {/* notch */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 w-32 h-7 bg-black rounded-full z-20" />
 
@@ -182,7 +182,7 @@ export default function Info() {
         className="relative z-10 max-w-7xl mx-auto px-6 py-24"
       >
         <div className="text-center max-w-3xl mx-auto mb-20">
-          <h2 className="text-5xl font-black">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black">
             Tudo que uma mamãe precisa 💜
           </h2>
 
@@ -219,7 +219,7 @@ export default function Info() {
       {/* Stack */}
       <section className="relative z-10 border-y border-white/10 bg-white/[0.03] backdrop-blur-xl py-24">
         <div className="max-w-6xl mx-auto px-6 text-center">
-          <h2 className="text-5xl font-black">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black">
             Tecnologia moderna e escalável
           </h2>
 
@@ -242,8 +242,8 @@ export default function Info() {
 
       {/* CTA */}
       <section className="relative z-10 max-w-6xl mx-auto px-6 py-24">
-        <div className="rounded-[3rem] border border-white/10 bg-gradient-to-br from-purple-500/15 to-pink-500/15 backdrop-blur-2xl p-14 text-center shadow-[0_0_100px_rgba(236,72,153,0.2)]">
-          <h2 className="text-5xl font-black leading-tight">
+        <div className="rounded-[2rem] sm:rounded-[3rem] border border-white/10 bg-gradient-to-br from-purple-500/15 to-pink-500/15 backdrop-blur-2xl p-6 sm:p-10 md:p-14 text-center shadow-[0_0_100px_rgba(236,72,153,0.2)]">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black leading-tight">
             Desenvolvido com 💜 para mamães reais.
           </h2>
 

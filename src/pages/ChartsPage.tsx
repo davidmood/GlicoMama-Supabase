@@ -75,9 +75,10 @@ export default function ChartsPage() {
 
   // Glucose by meal
   const mealChart = useMemo(() => {
+    const mealTypes = ['Café da manhã', 'Lanche da manhã', 'Almoço', 'Lanche da tarde', 'Jantar', 'Ceia'];
     const mealMap: Record<string, number[]> = {};
     for (const r of periodRecords) {
-      if (r.glucosePre) {
+      if (r.glucosePre && mealTypes.includes(r.mealType)) {
         if (!mealMap[r.mealType]) mealMap[r.mealType] = [];
         mealMap[r.mealType].push(r.glucosePre);
       }
@@ -96,11 +97,11 @@ export default function ChartsPage() {
     };
   }, [periodRecords]);
 
-  // Glucose vs Breastfeeding
+  // Glucose vs Breastfeeding (only Peito/Bomba/Ambos)
   const bfChart = useMemo(() => {
     const bfMap: Record<string, number[]> = {};
     for (const r of periodRecords) {
-      if (r.glucosePre && r.breastfeedingType) {
+      if (r.glucosePre && r.breastfeedingType && r.breastfeedingType !== 'Não realizou') {
         if (!bfMap[r.breastfeedingType]) bfMap[r.breastfeedingType] = [];
         bfMap[r.breastfeedingType].push(r.glucosePre);
       }
@@ -188,6 +189,7 @@ export default function ChartsPage() {
           borderWidth: 0,
         }],
       },
+      counts: [low, inRange, attention, high],
       total: t,
       inRangePct,
     };
@@ -256,8 +258,19 @@ export default function ChartsPage() {
         },
       },
       tooltip: {
+        backgroundColor: 'rgba(30, 20, 50, 0.95)',
+        titleFont: { size: 13 },
+        bodyFont: { size: 12 },
+        padding: 10,
         callbacks: {
-          label: (ctx: { label?: string; raw?: unknown }) => `${ctx.label}`,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          title: (items: any[]) => items[0]?.label ?? '',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          label: (ctx: any) => {
+            const pct = ctx.raw ?? 0;
+            const count = rangeDonut?.counts?.[ctx.dataIndex ?? 0] ?? 0;
+            return [`${pct}%`, `${count} registro${count !== 1 ? 's' : ''}`];
+          },
         },
       },
     },
