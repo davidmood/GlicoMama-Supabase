@@ -61,7 +61,7 @@ body {
 }
 
 a {
-  color: var(--accent-purple);
+  /* color: var(--accent-purple); */
   text-decoration: none;
 }
 
