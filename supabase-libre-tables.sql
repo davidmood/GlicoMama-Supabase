@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS libre_readings (
 
 -- Index for efficient queries
 CREATE INDEX IF NOT EXISTS idx_libre_readings_user_ts ON libre_readings(user_id, timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_libre_readings_user_date ON libre_readings(user_id, (timestamp::date));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_libre_readings_unique ON libre_readings(user_id, timestamp);
 
 -- 3. RLS policies
