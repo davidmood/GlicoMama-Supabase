@@ -54,7 +54,7 @@ export default function LibreSettingsPage() {
 
     const result = await connectLibre(userId, email, password, region);
     if (result.success) {
-      setConnectSuccess(`Conectado! Paciente: ${result.patientName || 'Encontrado'}`);
+      setConnectSuccess(`Conectado! ${result.patientName ? `Paciente: ${result.patientName}. ` : ''}As leituras serão sincronizadas em até 5 minutos.`);
       setEmail('');
       setPassword('');
       await loadStatus();

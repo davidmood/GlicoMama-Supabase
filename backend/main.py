@@ -467,30 +467,39 @@ class LibreReadingsRequest(BaseModel):
 
 @app.post("/api/libre/connect")
 def libre_connect(req: LibreConnectRequest):
-    """Connect a user's LibreLinkUp account."""
+    """Connect a user's LibreLinkUp account. Only tests login + saves credentials.
+    Initial data sync happens via the background scheduler (every 5 min)."""
     if not _supabase_client:
-        raise HTTPException(500, "Supabase not configured")
+        raise HTTPException(500, "Supabase não configurado. Contate o suporte.")
 
-    # Test login first
-    login_result = libre_login(req.email, req.password, req.region)
+    # Test login
+    try:
+        login_result = libre_login(req.email, req.password, req.region)
+    except Exception as e:
+        logger.error(f"LibreLinkUp login exception: {e}")
+        raise HTTPException(502, f"Erro ao comunicar com LibreLinkUp: {e}")
+
     if not login_result:
         raise HTTPException(401, "Falha ao conectar com LibreLinkUp. Verifique email e senha.")
 
     token = login_result["token"]
     region = login_result["region"]
 
-    # Get patient connections
-    patients = libre_get_connections(token, region)
-    patient_id = patients[0].get("patientId", "") if patients else ""
+    # Get patient connections (quick call)
+    patient_id = ""
     patient_name = ""
-    if patients:
-        p = patients[0]
-        patient_name = f"{p.get('firstName', '')} {p.get('lastName', '')}".strip()
+    try:
+        patients = libre_get_connections(token, region)
+        if patients:
+            patient_id = patients[0].get("patientId", "")
+            p = patients[0]
+            patient_name = f"{p.get('firstName', '')} {p.get('lastName', '')}".strip()
+    except Exception as e:
+        logger.warning(f"Could not fetch patient connections: {e}")
 
-    # Encrypt password
+    # Encrypt password and save
     encrypted = _encrypt_password(req.password)
 
-    # Upsert connection
     try:
         existing = _supabase_client.table("libre_connections") \
             .select("id") \
@@ -505,7 +514,6 @@ def libre_connect(req: LibreConnectRequest):
             "libre_patient_id": patient_id,
             "patient_name": patient_name,
             "active": True,
-            "last_sync": datetime.now(timezone.utc).isoformat(),
         }
 
         if existing.data:
@@ -515,53 +523,18 @@ def libre_connect(req: LibreConnectRequest):
         else:
             _supabase_client.table("libre_connections").insert(conn_data).execute()
 
-        # Do initial sync immediately
-        if patient_id:
-            graph_data = libre_get_graph(token, region, patient_id)
-            if graph_data:
-                stored = 0
-                all_readings = []
-                connection_data = graph_data.get("connection", {})
-                if connection_data and connection_data.get("glucoseMeasurement"):
-                    gm = connection_data["glucoseMeasurement"]
-                    all_readings.append({
-                        "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
-                        "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
-                        "trend": _parse_trend(gm.get("TrendArrow", 0)),
-                        "source": "current",
-                    })
-                for gm in graph_data.get("graphData", []):
-                    all_readings.append({
-                        "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
-                        "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
-                        "trend": _parse_trend(gm.get("TrendArrow", 0)),
-                        "source": "history",
-                    })
-                for r in all_readings:
-                    parsed_ts = _parse_libre_timestamp(r["timestamp"])
-                    if parsed_ts and r["glucose_value"]:
-                        try:
-                            _supabase_client.table("libre_readings").insert({
-                                "user_id": req.user_id,
-                                "timestamp": parsed_ts,
-                                "glucose_value": r["glucose_value"],
-                                "trend": r["trend"],
-                                "source": r["source"],
-                            }).execute()
-                            stored += 1
-                        except Exception:
-                            pass
-                logger.info(f"Initial sync: stored {stored} readings for user {req.user_id}")
+        logger.info(f"LibreLinkUp connected for user {req.user_id}, region={region}")
 
         return {
             "status": "connected",
             "region": region,
             "patient_name": patient_name,
             "patient_id": patient_id,
+            "message": "Conectado! As leituras serão sincronizadas em até 5 minutos.",
         }
     except Exception as e:
-        logger.error(f"Libre connect error: {e}")
-        raise HTTPException(500, str(e))
+        logger.error(f"Libre connect DB error: {e}")
+        raise HTTPException(500, f"Erro ao salvar conexão: {e}")
 
 
 @app.post("/api/libre/disconnect")

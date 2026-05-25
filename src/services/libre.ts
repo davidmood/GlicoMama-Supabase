@@ -45,11 +45,15 @@ export async function connectLibre(
   region: string,
 ): Promise<{ success: boolean; error?: string; patientName?: string }> {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
     const resp = await fetch(`${BACKEND_URL}/api/libre/connect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: userId, email, password, region }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ detail: 'Erro desconhecido' }));
       return { success: false, error: err.detail || 'Falha na conexão' };
@@ -57,7 +61,11 @@ export async function connectLibre(
     const data = await resp.json();
     return { success: true, patientName: data.patient_name };
   } catch (e) {
-    return { success: false, error: 'Erro de rede. Tente novamente.' };
+    const msg = e instanceof DOMException && e.name === 'AbortError'
+      ? 'Tempo limite excedido. O servidor demorou para responder.'
+      : `Erro de conexão com o servidor (${BACKEND_URL}). Verifique se o backend está ativo.`;
+    console.error('[Libre] Connect error:', e);
+    return { success: false, error: msg };
   }
 }
 
