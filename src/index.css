@@ -1134,12 +1134,13 @@ textarea.form-input {
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
+  z-index: 0;
 }
 
 .donut-center .pct {
   font-size: 28px;
   font-weight: 800;
-  color: var(--text-primary);
+  color: #22c55e;
 }
 
 .donut-center .lbl {

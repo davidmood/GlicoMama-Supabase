@@ -75,9 +75,10 @@ export default function ChartsPage() {
 
   // Glucose by meal
   const mealChart = useMemo(() => {
+    const mealTypes = ['Café da manhã', 'Lanche da manhã', 'Almoço', 'Lanche da tarde', 'Jantar', 'Ceia'];
     const mealMap: Record<string, number[]> = {};
     for (const r of periodRecords) {
-      if (r.glucosePre) {
+      if (r.glucosePre && mealTypes.includes(r.mealType)) {
         if (!mealMap[r.mealType]) mealMap[r.mealType] = [];
         mealMap[r.mealType].push(r.glucosePre);
       }
@@ -96,11 +97,11 @@ export default function ChartsPage() {
     };
   }, [periodRecords]);
 
-  // Glucose vs Breastfeeding
+  // Glucose vs Breastfeeding (only Peito/Bomba/Ambos)
   const bfChart = useMemo(() => {
     const bfMap: Record<string, number[]> = {};
     for (const r of periodRecords) {
-      if (r.glucosePre && r.breastfeedingType) {
+      if (r.glucosePre && r.breastfeedingType && r.breastfeedingType !== 'Não realizou') {
         if (!bfMap[r.breastfeedingType]) bfMap[r.breastfeedingType] = [];
         bfMap[r.breastfeedingType].push(r.glucosePre);
       }
