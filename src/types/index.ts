@@ -137,6 +137,7 @@ export interface PatientLink {
   viewerId: string;
   patientName: string;
   patientCpf: string;
+  viewerName?: string;
   role: 'medico' | 'familiar';
   createdAt: string;
 }
