@@ -150,6 +150,7 @@ export default function ChartsPage() {
   // Time in range donut with detailed labels
   const lowMax = settings?.glucoseLowMax ?? 69;
   const targetMin = settings?.glucoseTargetMin ?? 70;
+  const targetMax = settings?.glucoseTargetMax ?? 100;
   const attentionMax = settings?.glucoseAttentionMax ?? 140;
 
   const rangeDonut = useMemo(() => {
@@ -162,26 +163,26 @@ export default function ChartsPage() {
     if (vals.length === 0) return null;
 
     const low = vals.filter((v) => v <= lowMax).length;
-    const inRange = vals.filter((v) => v >= targetMin && v <= attentionMax).length;
-    const high = vals.filter((v) => v > attentionMax && v <= 250).length;
-    const veryHigh = vals.filter((v) => v > 250).length;
+    const inRange = vals.filter((v) => v >= targetMin && v <= targetMax).length;
+    const attention = vals.filter((v) => v > targetMax && v <= attentionMax).length;
+    const high = vals.filter((v) => v > attentionMax).length;
     const t = vals.length;
 
     const lowPct = Math.round(low / t * 100);
     const inRangePct = Math.round(inRange / t * 100);
+    const attPct = Math.round(attention / t * 100);
     const highPct = Math.round(high / t * 100);
-    const veryHighPct = Math.round(veryHigh / t * 100);
 
     return {
       data: {
         labels: [
           `< ${targetMin} mg/dL`,
-          `${targetMin} - ${attentionMax} mg/dL`,
-          `${attentionMax} - 250 mg/dL`,
-          `> 250 mg/dL`,
+          `${targetMin} - ${targetMax} mg/dL`,
+          `${targetMax + 1} - ${attentionMax} mg/dL`,
+          `> ${attentionMax} mg/dL`,
         ],
         datasets: [{
-          data: [lowPct, inRangePct, highPct, veryHighPct],
+          data: [lowPct, inRangePct, attPct, highPct],
           backgroundColor: ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444'],
           cutout: '65%',
           borderWidth: 0,
@@ -190,7 +191,7 @@ export default function ChartsPage() {
       total: t,
       inRangePct,
     };
-  }, [periodRecords, lowMax, targetMin, attentionMax]);
+  }, [periodRecords, lowMax, targetMin, targetMax, attentionMax]);
 
   const dailyChartOpts = {
     responsive: true,

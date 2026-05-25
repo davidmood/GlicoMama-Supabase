@@ -102,7 +102,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
 
   const timeInRange = useMemo(() => {
     const min = settings?.glucoseTargetMin ?? 70;
-    const max = settings?.glucoseAttentionMax ?? 140;
+    const max = settings?.glucoseTargetMax ?? 100;
     const vals: number[] = [];
     weekRecords.forEach(r => {
       if (r.glucosePre) vals.push(r.glucosePre);
@@ -239,10 +239,6 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       y: {
         grid: { color: 'rgba(61,45,92,0.3)' },
         ticks: { color: '#6b5b8a', font: { size: 11 } },
-        min: 50,
-        max: 250,
-        suggestedMin: 50,
-        suggestedMax: 250,
       },
     },
   };
@@ -251,6 +247,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const donutData = useMemo(() => {
     const lowMax = settings?.glucoseLowMax ?? 69;
     const targetMin = settings?.glucoseTargetMin ?? 70;
+    const targetMax = settings?.glucoseTargetMax ?? 100;
     const attentionMax = settings?.glucoseAttentionMax ?? 140;
     const vals: number[] = [];
     weekRecords.forEach(r => {
@@ -262,25 +259,25 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
     if (vals.length === 0) return { labels: ['Sem dados'], datasets: [{ data: [1], backgroundColor: ['#3d2d5c'] }] };
 
     const low = vals.filter((v) => v <= lowMax).length;
-    const inRange = vals.filter((v) => v >= targetMin && v <= attentionMax).length;
-    const high = vals.filter((v) => v > attentionMax && v <= 250).length;
-    const veryHigh = vals.filter((v) => v > 250).length;
+    const inRange = vals.filter((v) => v >= targetMin && v <= targetMax).length;
+    const attention = vals.filter((v) => v > targetMax && v <= attentionMax).length;
+    const high = vals.filter((v) => v > attentionMax).length;
 
     const total = vals.length;
     return {
       labels: [
         `< ${targetMin} mg/dL`,
-        `${targetMin} - ${attentionMax} mg/dL`,
-        `${attentionMax} - 250 mg/dL`,
-        `> 250 mg/dL`,
+        `${targetMin} - ${targetMax} mg/dL`,
+        `${targetMax + 1} - ${attentionMax} mg/dL`,
+        `> ${attentionMax} mg/dL`,
       ],
       datasets: [
         {
           data: [
             Math.round((low / total) * 100),
             Math.round((inRange / total) * 100),
+            Math.round((attention / total) * 100),
             Math.round((high / total) * 100),
-            Math.round((veryHigh / total) * 100),
           ],
           backgroundColor: ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444'],
           borderWidth: 0,

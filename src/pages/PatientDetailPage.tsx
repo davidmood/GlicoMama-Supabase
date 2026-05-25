@@ -20,8 +20,6 @@ import { exportToCSV, exportToPDF } from '../services/export';
 import type { GlucoseRecord } from '../types';
 import { classifyGlucose } from '../types';
 
-type TirRanges = { min: number; max: number };
-
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler);
 
 interface PatientDetailPageProps {
@@ -116,9 +114,11 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     ? Math.round(glucoseValues.reduce((a, b) => a + b, 0) / glucoseValues.length)
     : 0;
 
-  const tirRanges: TirRanges = useMemo(() => ({
+  const tirRanges = useMemo(() => ({
+    lowMax: settings.glucoseLowMax,
     min: settings.glucoseTargetMin,
-    max: settings.glucoseAttentionMax,
+    max: settings.glucoseTargetMax,
+    attMax: settings.glucoseAttentionMax,
   }), [settings]);
 
   const inRange = glucoseValues.filter(v => v >= tirRanges.min && v <= tirRanges.max).length;
@@ -127,9 +127,9 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
   const distribution = useMemo(() => {
     let low = 0, inTarget = 0, attention = 0, high = 0;
     glucoseValues.forEach(v => {
-      if (v < tirRanges.min) low++;
-      else if (v <= tirRanges.max) inTarget++;
-      else if (v <= 250) attention++;
+      if (v <= tirRanges.lowMax) low++;
+      else if (v >= tirRanges.min && v <= tirRanges.max) inTarget++;
+      else if (v <= tirRanges.attMax) attention++;
       else high++;
     });
     return { low, inTarget, attention, high };
@@ -194,8 +194,8 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     labels: [
       `< ${tirRanges.min} mg/dL`,
       `${tirRanges.min} - ${tirRanges.max} mg/dL`,
-      `${tirRanges.max} - 250 mg/dL`,
-      `> 250 mg/dL`,
+      `${tirRanges.max + 1} - ${tirRanges.attMax} mg/dL`,
+      `> ${tirRanges.attMax} mg/dL`,
     ],
     datasets: [{
       data: [
