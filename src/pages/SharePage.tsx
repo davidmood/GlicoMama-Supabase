@@ -193,7 +193,7 @@ export default function SharePage() {
                 borderBottom: '1px solid var(--border-color)',
               }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{v.patientName}</div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{v.viewerName || v.patientName || 'Sem nome'}</div>
                   <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                     {v.role === 'medico' ? 'Médico(a)' : 'Familiar'}
                   </div>

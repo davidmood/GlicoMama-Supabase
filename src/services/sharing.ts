@@ -187,11 +187,13 @@ export async function getMyViewers(): Promise<PatientLink[]> {
 
   return links.map((row: Record<string, unknown>) => {
     const profile = profileMap.get(row.viewer_id as string);
+    const name = (profile?.name as string) || 'Sem nome';
     return {
       id: row.id as string,
       patientId: row.patient_id as string,
       viewerId: row.viewer_id as string,
-      patientName: (profile?.name as string) || 'Sem nome',
+      patientName: name,
+      viewerName: name,
       patientCpf: '',
       role: row.role as 'medico' | 'familiar',
       createdAt: row.created_at as string,

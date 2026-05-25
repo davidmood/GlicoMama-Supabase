@@ -122,13 +122,14 @@ export async function exportToPDF(records: GlucoseRecord[], userName: string): P
     r.carbohydrates ? `${r.carbohydrates} g` : '-',
     r.breastfeedingType !== 'Não realizou' ? r.breastfeedingType : '-',
     r.breastfeedingDuration ? `${r.breastfeedingDuration} min` : '-',
+    r.extractedAmount ? `${r.extractedAmount} ml` : '-',
     r.foodDescription || '-',
     r.notes || '-',
   ]);
 
   autoTable(doc, {
     startY: statsY + 4,
-    head: [['Data', 'Refeição', 'Pré', 'Pós 1h', 'Pós 2h', 'Insulina', 'Carb', 'Amament.', 'Duração', 'Desc. Refeição', 'Observações']],
+    head: [['Data', 'Refeição', 'Pré', 'Pós 1h', 'Pós 2h', 'Insulina', 'Carb', 'Amament.', 'Duração', 'Qtd (ml)', 'Desc. Refeição', 'Observações']],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [107, 33, 168], textColor: 255, fontSize: 7 },
@@ -136,8 +137,8 @@ export async function exportToPDF(records: GlucoseRecord[], userName: string): P
     alternateRowStyles: { fillColor: [245, 243, 255] },
     styles: { cellPadding: 2 },
     columnStyles: {
-      9: { cellWidth: 40 },
       10: { cellWidth: 40 },
+      11: { cellWidth: 40 },
     },
   });
 
