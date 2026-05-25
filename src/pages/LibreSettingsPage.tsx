@@ -78,7 +78,7 @@ export default function LibreSettingsPage() {
       setSyncResult(`Sincronizado! ${result.newReadings || 0} novas leituras.`);
       await loadStatus();
     } else {
-      setSyncResult('Falha na sincronização. Tente novamente.');
+      setSyncResult(result.error || 'Falha na sincronização. Tente novamente.');
     }
     setSyncing(false);
   }

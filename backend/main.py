@@ -580,61 +580,97 @@ def libre_status(req: LibreStatusRequest):
 def libre_force_sync(req: LibreStatusRequest):
     """Force an immediate sync of Libre readings for a user."""
     if not _supabase_client:
-        raise HTTPException(500, "Supabase not configured")
+        raise HTTPException(500, "Supabase não configurado")
+
+    # 1. Get connection
     try:
         result = _supabase_client.table("libre_connections") \
             .select("*") \
             .eq("user_id", req.user_id) \
             .eq("active", True) \
             .execute()
-        if not result.data:
-            raise HTTPException(404, "Nenhuma conexão LibreLinkUp ativa")
+    except Exception as e:
+        logger.error(f"Sync: DB query error: {e}")
+        raise HTTPException(500, f"Erro ao buscar conexão no banco: {e}")
 
-        conn = result.data[0]
+    if not result.data:
+        raise HTTPException(404, "Nenhuma conexão LibreLinkUp ativa. Configure em CGM Libre → Configurar.")
+
+    conn = result.data[0]
+
+    # 2. Decrypt and login
+    try:
         password = _decrypt_password(conn["encrypted_password"])
+    except Exception as e:
+        logger.error(f"Sync: decrypt error: {e}")
+        raise HTTPException(500, "Erro ao descriptografar credenciais. Reconecte sua conta.")
+
+    try:
         login_result = libre_login(conn["libre_email"], password, conn.get("region", "eu"))
-        if not login_result:
-            raise HTTPException(401, "Falha ao reconectar com LibreLinkUp")
+    except Exception as e:
+        logger.error(f"Sync: login exception: {e}")
+        raise HTTPException(502, f"Erro ao comunicar com LibreLinkUp: {e}")
 
-        token = login_result["token"]
-        region = login_result["region"]
-        patient_id = conn.get("libre_patient_id", "")
+    if not login_result:
+        raise HTTPException(401, "Falha ao autenticar com LibreLinkUp. Verifique suas credenciais ou reconecte.")
 
-        if not patient_id:
+    token = login_result["token"]
+    region = login_result["region"]
+    patient_id = conn.get("libre_patient_id", "")
+
+    # 3. Get patient ID if missing
+    if not patient_id:
+        try:
             patients = libre_get_connections(token, region)
             if patients:
                 patient_id = patients[0].get("patientId", "")
+                if patient_id:
+                    _supabase_client.table("libre_connections") \
+                        .update({"libre_patient_id": patient_id, "region": region}) \
+                        .eq("id", conn["id"]).execute()
+        except Exception as e:
+            logger.error(f"Sync: get connections error: {e}")
 
-        if not patient_id:
-            raise HTTPException(404, "Nenhum sensor encontrado")
+    if not patient_id:
+        raise HTTPException(404, "Nenhum sensor/paciente encontrado no LibreLinkUp. Verifique se o compartilhamento está ativo no app FreeStyle Libre.")
 
+    # 4. Get graph data
+    try:
         graph_data = libre_get_graph(token, region, patient_id)
-        if not graph_data:
-            raise HTTPException(500, "Falha ao buscar dados do sensor")
+    except Exception as e:
+        logger.error(f"Sync: graph error: {e}")
+        raise HTTPException(502, f"Erro ao buscar dados do sensor: {e}")
 
-        stored = 0
-        all_readings = []
-        connection_data = graph_data.get("connection", {})
-        if connection_data and connection_data.get("glucoseMeasurement"):
-            gm = connection_data["glucoseMeasurement"]
-            all_readings.append({
-                "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
-                "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
-                "trend": _parse_trend(gm.get("TrendArrow", 0)),
-                "source": "current",
-            })
-        for gm in graph_data.get("graphData", []):
-            all_readings.append({
-                "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
-                "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
-                "trend": _parse_trend(gm.get("TrendArrow", 0)),
-                "source": "history",
-            })
+    if not graph_data:
+        raise HTTPException(502, "LibreLinkUp retornou dados vazios. Tente novamente em alguns minutos.")
 
-        for r in all_readings:
-            parsed_ts = _parse_libre_timestamp(r["timestamp"])
-            if not parsed_ts or not r["glucose_value"]:
-                continue
+    # 5. Parse and store readings
+    stored = 0
+    all_readings = []
+    connection_data = graph_data.get("connection", {})
+    if connection_data and connection_data.get("glucoseMeasurement"):
+        gm = connection_data["glucoseMeasurement"]
+        all_readings.append({
+            "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+            "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
+            "trend": _parse_trend(gm.get("TrendArrow", 0)),
+            "source": "current",
+        })
+    for gm in graph_data.get("graphData", []):
+        all_readings.append({
+            "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+            "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
+            "trend": _parse_trend(gm.get("TrendArrow", 0)),
+            "source": "history",
+        })
+
+    logger.info(f"Sync: found {len(all_readings)} readings for user {req.user_id}")
+
+    for r in all_readings:
+        parsed_ts = _parse_libre_timestamp(r["timestamp"])
+        if not parsed_ts or not r["glucose_value"]:
+            continue
+        try:
             existing = _supabase_client.table("libre_readings") \
                 .select("id") \
                 .eq("user_id", req.user_id) \
@@ -650,17 +686,15 @@ def libre_force_sync(req: LibreStatusRequest):
                 "source": r["source"],
             }).execute()
             stored += 1
+        except Exception as e:
+            logger.warning(f"Sync: insert error for ts={parsed_ts}: {e}")
 
-        _supabase_client.table("libre_connections") \
-            .update({"last_sync": datetime.now(timezone.utc).isoformat()}) \
-            .eq("id", conn["id"]).execute()
+    _supabase_client.table("libre_connections") \
+        .update({"last_sync": datetime.now(timezone.utc).isoformat()}) \
+        .eq("id", conn["id"]).execute()
 
-        return {"status": "synced", "new_readings": stored}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Libre force sync error: {e}")
-        raise HTTPException(500, str(e))
+    logger.info(f"Sync complete: {stored} new readings for user {req.user_id}")
+    return {"status": "synced", "new_readings": stored}
 
 
 @app.post("/api/schedule")
