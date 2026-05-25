@@ -82,18 +82,29 @@ export async function disconnectLibre(userId: string): Promise<boolean> {
   }
 }
 
-export async function forceSync(userId: string): Promise<{ success: boolean; newReadings?: number }> {
+export async function forceSync(userId: string): Promise<{ success: boolean; newReadings?: number; error?: string }> {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000);
     const resp = await fetch(`${BACKEND_URL}/api/libre/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: userId }),
+      signal: controller.signal,
     });
-    if (!resp.ok) return { success: false };
+    clearTimeout(timeout);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'Erro desconhecido' }));
+      return { success: false, error: err.detail || `Erro ${resp.status}` };
+    }
     const data = await resp.json();
     return { success: true, newReadings: data.new_readings };
-  } catch {
-    return { success: false };
+  } catch (e) {
+    const msg = e instanceof DOMException && e.name === 'AbortError'
+      ? 'Tempo limite excedido. A sincronização pode demorar — as leituras serão sincronizadas automaticamente em até 5 minutos.'
+      : `Erro de conexão com o servidor. Verifique se o backend está ativo.`;
+    console.error('[Libre] Sync error:', e);
+    return { success: false, error: msg };
   }
 }
 
