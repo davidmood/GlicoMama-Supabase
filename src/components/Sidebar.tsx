@@ -13,6 +13,7 @@ import {
   LogOut,
   Users,
   Share2,
+  Activity,
 } from 'lucide-react';
 import type { UserRole } from '../types';
 
@@ -33,6 +34,7 @@ const patientNavItems = [
   { id: 'records', label: 'Registros', icon: List },
   { id: 'new-record', label: 'Novo Registro', icon: PlusCircle },
   { id: 'charts', label: 'Gráficos', icon: BarChart3 },
+  { id: 'libre', label: 'CGM Libre', icon: Activity },
   { id: 'reports', label: 'Relatórios', icon: FileText },
   { id: 'goals', label: 'Metas', icon: Target },
   { id: 'reminders', label: 'Lembretes', icon: Bell },

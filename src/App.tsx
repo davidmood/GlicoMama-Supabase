@@ -16,6 +16,8 @@ import PatientDetailPage from './pages/PatientDetailPage';
 import SharePage from './pages/SharePage';
 import AuthPage from './pages/AuthPage';
 import Info from './pages/Info';
+import LibreDashboardPage from './pages/LibreDashboardPage';
+import LibreSettingsPage from './pages/LibreSettingsPage';
 
 import NewRecordModal from './components/NewRecordModal';
 import Toast from './components/Toast';
@@ -318,6 +320,12 @@ export default function App() {
             onNavigate={handleNavigate}
           />
         );
+
+      case 'libre':
+        return <LibreDashboardPage onNavigate={handleNavigate} />;
+
+      case 'libre-settings':
+        return <LibreSettingsPage />;
 
       case 'share':
         return <SharePage />;
