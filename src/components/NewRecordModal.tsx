@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Droplets, Syringe, UtensilsCrossed, Baby, MoreHorizontal, Bell } from 'lucide-react';
+import { X, Droplets, Syringe, UtensilsCrossed, Baby, MoreHorizontal, Bell, Activity } from 'lucide-react';
 import {
   MEAL_TYPES,
   BREASTFEEDING_TYPES,
@@ -12,6 +12,7 @@ import {
   localInputToUtc,
 } from '../types';
 import type { GlucoseRecord } from '../types';
+import { getLibreReadings, findClosestReading } from '../services/libre';
 
 interface NewRecordModalProps {
   onClose: () => void;
@@ -42,6 +43,9 @@ export default function NewRecordModal({ onClose, onSave, editRecord, mode = 'fu
     return empty;
   });
 
+  const [libreLoading, setLibreLoading] = useState(false);
+  const [libreFilled, setLibreFilled] = useState(false);
+
   useEffect(() => {
     const hasGlucosePre = !!form.glucosePre;
     const noPost = !form.glucosePos1h && !form.glucosePos2h;
@@ -50,6 +54,36 @@ export default function NewRecordModal({ onClose, onSave, editRecord, mode = 'fu
 
   const update = <K extends keyof GlucoseRecord>(key: K, value: GlucoseRecord[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleLibreAutofill = async () => {
+    setLibreLoading(true);
+    try {
+      const recordTime = new Date(form.timestamp);
+      const start = new Date(recordTime.getTime() - 30 * 60 * 1000);
+      const end = new Date(recordTime.getTime() + 150 * 60 * 1000);
+      const readings = await getLibreReadings(start.toISOString(), end.toISOString());
+
+      if (readings.length === 0) {
+        setLibreLoading(false);
+        return;
+      }
+
+      const pre = findClosestReading(readings, recordTime, 15);
+      const pos1h = findClosestReading(readings, new Date(recordTime.getTime() + 60 * 60 * 1000), 15);
+      const pos2h = findClosestReading(readings, new Date(recordTime.getTime() + 120 * 60 * 1000), 15);
+
+      setForm(prev => ({
+        ...prev,
+        glucosePre: pre ? pre.glucoseValue : prev.glucosePre,
+        glucosePos1h: pos1h ? pos1h.glucoseValue : prev.glucosePos1h,
+        glucosePos2h: pos2h ? pos2h.glucoseValue : prev.glucosePos2h,
+      }));
+      setLibreFilled(true);
+    } catch (e) {
+      console.error('[Libre] Autofill error:', e);
+    }
+    setLibreLoading(false);
   };
 
   const handleSave = () => {
@@ -109,7 +143,24 @@ export default function NewRecordModal({ onClose, onSave, editRecord, mode = 'fu
               </div>
 
               <div className="form-group">
-                <label>Glicemia (mg/dL)</label>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  Glicemia (mg/dL)
+                  <button
+                    type="button"
+                    onClick={handleLibreAutofill}
+                    disabled={libreLoading}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      padding: '4px 10px', borderRadius: 6, border: '1px solid var(--accent-purple)',
+                      background: libreFilled ? 'rgba(34,197,94,0.1)' : 'transparent',
+                      color: libreFilled ? '#22c55e' : 'var(--accent-purple)',
+                      fontSize: 11, cursor: 'pointer',
+                    }}
+                  >
+                    <Activity size={12} />
+                    {libreLoading ? 'Buscando...' : libreFilled ? 'Libre preenchido' : 'Preencher do Libre'}
+                  </button>
+                </label>
                 <div className="form-row">
                   <div>
                     <label style={{ fontSize: 11, opacity: 0.7 }}>Pré</label>

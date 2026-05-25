@@ -2,8 +2,11 @@ import json
 import os
 import logging
 import httpx
+import base64
+import hashlib
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +20,29 @@ _scheduler = None
 
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
 VAPID_CLAIMS = {"sub": "mailto:glicomama@noreply.com"}
+
+# LibreLinkUp API configuration
+LIBRE_REGIONS = {
+    "eu": "https://api-eu.libreview.io",
+    "us": "https://api-us.libreview.io",
+    "eu2": "https://api-eu2.libreview.io",
+    "ae": "https://api-ae.libreview.io",
+    "ap": "https://api-ap.libreview.io",
+    "au": "https://api-au.libreview.io",
+    "de": "https://api-de.libreview.io",
+    "fr": "https://api-fr.libreview.io",
+    "jp": "https://api-jp.libreview.io",
+    "la": "https://api-la.libreview.io",
+}
+LIBRE_HEADERS = {
+    "Content-Type": "application/json",
+    "product": "llu.android",
+    "version": "4.12.0",
+    "Accept-Encoding": "gzip",
+}
+
+# Simple encryption for storing LibreLinkUp credentials
+ENCRYPTION_KEY = os.environ.get("LIBRE_ENCRYPTION_KEY", os.environ.get("SUPABASE_SERVICE_KEY", "default-key")[:32])
 
 
 def _init_supabase():
@@ -111,6 +137,240 @@ def keep_alive():
         pass
 
 
+# ─── LibreLinkUp Integration ───────────────────────────────
+
+def _encrypt_password(password: str) -> str:
+    """Simple AES-like obfuscation for storing passwords."""
+    key_bytes = hashlib.sha256(ENCRYPTION_KEY.encode()).digest()
+    encoded = base64.b64encode(password.encode()).decode()
+    # XOR with key for basic obfuscation
+    result = []
+    for i, c in enumerate(encoded):
+        result.append(chr(ord(c) ^ key_bytes[i % len(key_bytes)]))
+    return base64.b64encode(''.join(result).encode('latin-1')).decode()
+
+
+def _decrypt_password(encrypted: str) -> str:
+    """Reverse the obfuscation."""
+    key_bytes = hashlib.sha256(ENCRYPTION_KEY.encode()).digest()
+    decoded = base64.b64decode(encrypted).decode('latin-1')
+    result = []
+    for i, c in enumerate(decoded):
+        result.append(chr(ord(c) ^ key_bytes[i % len(key_bytes)]))
+    return base64.b64decode(''.join(result)).decode()
+
+
+def libre_login(email: str, password: str, region: str = "eu") -> dict | None:
+    """Login to LibreLinkUp API and return auth token + patient ID."""
+    base_url = LIBRE_REGIONS.get(region, LIBRE_REGIONS["eu"])
+    try:
+        resp = httpx.post(
+            f"{base_url}/llu/auth/login",
+            headers=LIBRE_HEADERS,
+            json={"email": email, "password": password},
+            timeout=15,
+        )
+        data = resp.json()
+
+        # Handle region redirect
+        if data.get("status") == 2 and data.get("data", {}).get("redirect"):
+            new_region = data["data"]["region"]
+            new_url = LIBRE_REGIONS.get(new_region, f"https://api-{new_region}.libreview.io")
+            resp = httpx.post(
+                f"{new_url}/llu/auth/login",
+                headers=LIBRE_HEADERS,
+                json={"email": email, "password": password},
+                timeout=15,
+            )
+            data = resp.json()
+            region = new_region
+
+        if data.get("status") != 0:
+            logger.error(f"LibreLinkUp login failed: {data.get('error', data)}")
+            return None
+
+        auth_ticket = data.get("data", {}).get("authTicket", {})
+        token = auth_ticket.get("token")
+        if not token:
+            logger.error("LibreLinkUp login: no token in response")
+            return None
+
+        return {"token": token, "region": region}
+    except Exception as e:
+        logger.error(f"LibreLinkUp login error: {e}")
+        return None
+
+
+def libre_get_connections(token: str, region: str) -> list:
+    """Get patient connections from LibreLinkUp."""
+    base_url = LIBRE_REGIONS.get(region, LIBRE_REGIONS["eu"])
+    headers = {**LIBRE_HEADERS, "Authorization": f"Bearer {token}"}
+    try:
+        resp = httpx.get(f"{base_url}/llu/connections", headers=headers, timeout=15)
+        data = resp.json()
+        return data.get("data", []) or []
+    except Exception as e:
+        logger.error(f"LibreLinkUp connections error: {e}")
+        return []
+
+
+def libre_get_graph(token: str, region: str, patient_id: str) -> dict | None:
+    """Get glucose graph data for a patient."""
+    base_url = LIBRE_REGIONS.get(region, LIBRE_REGIONS["eu"])
+    headers = {**LIBRE_HEADERS, "Authorization": f"Bearer {token}"}
+    try:
+        resp = httpx.get(
+            f"{base_url}/llu/connections/{patient_id}/graph",
+            headers=headers,
+            timeout=15,
+        )
+        data = resp.json()
+        return data.get("data", {})
+    except Exception as e:
+        logger.error(f"LibreLinkUp graph error: {e}")
+        return None
+
+
+def poll_libre_readings():
+    """Poll LibreLinkUp for all connected users and store readings."""
+    if not _supabase_client:
+        return
+    try:
+        result = _supabase_client.table("libre_connections") \
+            .select("*") \
+            .eq("active", True) \
+            .execute()
+        connections = result.data or []
+        if not connections:
+            return
+
+        for conn in connections:
+            try:
+                password = _decrypt_password(conn["encrypted_password"])
+                login_result = libre_login(conn["libre_email"], password, conn.get("region", "eu"))
+                if not login_result:
+                    logger.warning(f"LibreLinkUp login failed for user {conn['user_id']}")
+                    continue
+
+                token = login_result["token"]
+                region = login_result["region"]
+                patient_id = conn.get("libre_patient_id", "")
+
+                if not patient_id:
+                    patients = libre_get_connections(token, region)
+                    if patients:
+                        patient_id = patients[0].get("patientId", "")
+                        if patient_id:
+                            _supabase_client.table("libre_connections") \
+                                .update({"libre_patient_id": patient_id, "region": region}) \
+                                .eq("id", conn["id"]).execute()
+
+                if not patient_id:
+                    continue
+
+                graph_data = libre_get_graph(token, region, patient_id)
+                if not graph_data:
+                    continue
+
+                readings = []
+                # Current glucose reading
+                connection_data = graph_data.get("connection", {})
+                if connection_data and connection_data.get("glucoseMeasurement"):
+                    gm = connection_data["glucoseMeasurement"]
+                    readings.append({
+                        "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+                        "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
+                        "trend": _parse_trend(gm.get("TrendArrow", 0)),
+                        "source": "current",
+                    })
+
+                # Historical readings from graph
+                for gm in graph_data.get("graphData", []):
+                    readings.append({
+                        "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+                        "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
+                        "trend": _parse_trend(gm.get("TrendArrow", 0)),
+                        "source": "history",
+                    })
+
+                if not readings:
+                    continue
+
+                # Store new readings (upsert by user_id + timestamp)
+                stored = 0
+                for r in readings:
+                    ts = r["timestamp"]
+                    if not ts or not r["glucose_value"]:
+                        continue
+                    # Parse LibreLinkUp timestamp format: "M/D/YYYY H:MM:SS AM/PM"
+                    parsed_ts = _parse_libre_timestamp(ts)
+                    if not parsed_ts:
+                        continue
+
+                    # Check if reading already exists
+                    existing = _supabase_client.table("libre_readings") \
+                        .select("id") \
+                        .eq("user_id", conn["user_id"]) \
+                        .eq("timestamp", parsed_ts) \
+                        .execute()
+                    if existing.data:
+                        continue
+
+                    _supabase_client.table("libre_readings").insert({
+                        "user_id": conn["user_id"],
+                        "timestamp": parsed_ts,
+                        "glucose_value": r["glucose_value"],
+                        "trend": r["trend"],
+                        "source": r["source"],
+                    }).execute()
+                    stored += 1
+
+                if stored > 0:
+                    logger.info(f"Stored {stored} new Libre readings for user {conn['user_id']}")
+
+                # Update last_sync
+                _supabase_client.table("libre_connections") \
+                    .update({"last_sync": datetime.now(timezone.utc).isoformat()}) \
+                    .eq("id", conn["id"]).execute()
+
+            except Exception as e:
+                logger.error(f"Libre poll error for user {conn.get('user_id', '?')}: {e}")
+    except Exception as e:
+        logger.error(f"Libre poll global error: {e}")
+
+
+def _parse_trend(arrow: int) -> str:
+    """Convert LibreLinkUp trend arrow to string."""
+    trends = {
+        1: "falling_fast",
+        2: "falling",
+        3: "stable",
+        4: "rising",
+        5: "rising_fast",
+    }
+    return trends.get(arrow, "unknown")
+
+
+def _parse_libre_timestamp(ts: str) -> str | None:
+    """Parse LibreLinkUp timestamp to ISO format."""
+    formats = [
+        "%m/%d/%Y %I:%M:%S %p",
+        "%d/%m/%Y %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%m/%d/%Y %H:%M:%S",
+    ]
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(ts, fmt)
+            return dt.isoformat() + "Z"
+        except ValueError:
+            continue
+    # Already ISO?
+    if "T" in ts:
+        return ts if ts.endswith("Z") else ts + "Z"
+    return None
+
+
 @asynccontextmanager
 async def lifespan(a: FastAPI):
     global _scheduler
@@ -122,8 +382,9 @@ async def lifespan(a: FastAPI):
         _scheduler = BackgroundScheduler()
         _scheduler.add_job(poll_scheduled_notifications, "interval", seconds=30)
         _scheduler.add_job(keep_alive, "interval", minutes=13)
+        _scheduler.add_job(poll_libre_readings, "interval", minutes=5)
         _scheduler.start()
-        logger.info("Scheduler started — polling every 30s, keep-alive every 13min")
+        logger.info("Scheduler started — polling every 30s, keep-alive every 13min, Libre every 5min")
     except Exception as e:
         logger.error(f"Scheduler error: {e}")
     yield
@@ -177,7 +438,256 @@ def health():
         "status": "ok",
         "supabase": bool(_supabase_client),
         "vapid": bool(VAPID_PRIVATE_KEY),
+        "libre": True,
     }
+
+
+# ─── LibreLinkUp API Endpoints ─────────────────────────────
+
+class LibreConnectRequest(BaseModel):
+    user_id: str
+    email: str
+    password: str
+    region: str = "eu"
+
+
+class LibreDisconnectRequest(BaseModel):
+    user_id: str
+
+
+class LibreStatusRequest(BaseModel):
+    user_id: str
+
+
+class LibreReadingsRequest(BaseModel):
+    user_id: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+@app.post("/api/libre/connect")
+def libre_connect(req: LibreConnectRequest):
+    """Connect a user's LibreLinkUp account."""
+    if not _supabase_client:
+        raise HTTPException(500, "Supabase not configured")
+
+    # Test login first
+    login_result = libre_login(req.email, req.password, req.region)
+    if not login_result:
+        raise HTTPException(401, "Falha ao conectar com LibreLinkUp. Verifique email e senha.")
+
+    token = login_result["token"]
+    region = login_result["region"]
+
+    # Get patient connections
+    patients = libre_get_connections(token, region)
+    patient_id = patients[0].get("patientId", "") if patients else ""
+    patient_name = ""
+    if patients:
+        p = patients[0]
+        patient_name = f"{p.get('firstName', '')} {p.get('lastName', '')}".strip()
+
+    # Encrypt password
+    encrypted = _encrypt_password(req.password)
+
+    # Upsert connection
+    try:
+        existing = _supabase_client.table("libre_connections") \
+            .select("id") \
+            .eq("user_id", req.user_id) \
+            .execute()
+
+        conn_data = {
+            "user_id": req.user_id,
+            "libre_email": req.email,
+            "encrypted_password": encrypted,
+            "region": region,
+            "libre_patient_id": patient_id,
+            "patient_name": patient_name,
+            "active": True,
+            "last_sync": datetime.now(timezone.utc).isoformat(),
+        }
+
+        if existing.data:
+            _supabase_client.table("libre_connections") \
+                .update(conn_data) \
+                .eq("id", existing.data[0]["id"]).execute()
+        else:
+            _supabase_client.table("libre_connections").insert(conn_data).execute()
+
+        # Do initial sync immediately
+        if patient_id:
+            graph_data = libre_get_graph(token, region, patient_id)
+            if graph_data:
+                stored = 0
+                all_readings = []
+                connection_data = graph_data.get("connection", {})
+                if connection_data and connection_data.get("glucoseMeasurement"):
+                    gm = connection_data["glucoseMeasurement"]
+                    all_readings.append({
+                        "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+                        "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
+                        "trend": _parse_trend(gm.get("TrendArrow", 0)),
+                        "source": "current",
+                    })
+                for gm in graph_data.get("graphData", []):
+                    all_readings.append({
+                        "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+                        "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
+                        "trend": _parse_trend(gm.get("TrendArrow", 0)),
+                        "source": "history",
+                    })
+                for r in all_readings:
+                    parsed_ts = _parse_libre_timestamp(r["timestamp"])
+                    if parsed_ts and r["glucose_value"]:
+                        try:
+                            _supabase_client.table("libre_readings").insert({
+                                "user_id": req.user_id,
+                                "timestamp": parsed_ts,
+                                "glucose_value": r["glucose_value"],
+                                "trend": r["trend"],
+                                "source": r["source"],
+                            }).execute()
+                            stored += 1
+                        except Exception:
+                            pass
+                logger.info(f"Initial sync: stored {stored} readings for user {req.user_id}")
+
+        return {
+            "status": "connected",
+            "region": region,
+            "patient_name": patient_name,
+            "patient_id": patient_id,
+        }
+    except Exception as e:
+        logger.error(f"Libre connect error: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/libre/disconnect")
+def libre_disconnect(req: LibreDisconnectRequest):
+    """Disconnect a user's LibreLinkUp account."""
+    if not _supabase_client:
+        raise HTTPException(500, "Supabase not configured")
+    try:
+        _supabase_client.table("libre_connections") \
+            .update({"active": False}) \
+            .eq("user_id", req.user_id).execute()
+        return {"status": "disconnected"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/libre/status")
+def libre_status(req: LibreStatusRequest):
+    """Check LibreLinkUp connection status for a user."""
+    if not _supabase_client:
+        raise HTTPException(500, "Supabase not configured")
+    try:
+        result = _supabase_client.table("libre_connections") \
+            .select("active, region, patient_name, last_sync, libre_email") \
+            .eq("user_id", req.user_id) \
+            .eq("active", True) \
+            .execute()
+        if result.data:
+            conn = result.data[0]
+            return {
+                "connected": True,
+                "email": conn["libre_email"],
+                "region": conn.get("region", "eu"),
+                "patient_name": conn.get("patient_name", ""),
+                "last_sync": conn.get("last_sync", ""),
+            }
+        return {"connected": False}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/libre/sync")
+def libre_force_sync(req: LibreStatusRequest):
+    """Force an immediate sync of Libre readings for a user."""
+    if not _supabase_client:
+        raise HTTPException(500, "Supabase not configured")
+    try:
+        result = _supabase_client.table("libre_connections") \
+            .select("*") \
+            .eq("user_id", req.user_id) \
+            .eq("active", True) \
+            .execute()
+        if not result.data:
+            raise HTTPException(404, "Nenhuma conexão LibreLinkUp ativa")
+
+        conn = result.data[0]
+        password = _decrypt_password(conn["encrypted_password"])
+        login_result = libre_login(conn["libre_email"], password, conn.get("region", "eu"))
+        if not login_result:
+            raise HTTPException(401, "Falha ao reconectar com LibreLinkUp")
+
+        token = login_result["token"]
+        region = login_result["region"]
+        patient_id = conn.get("libre_patient_id", "")
+
+        if not patient_id:
+            patients = libre_get_connections(token, region)
+            if patients:
+                patient_id = patients[0].get("patientId", "")
+
+        if not patient_id:
+            raise HTTPException(404, "Nenhum sensor encontrado")
+
+        graph_data = libre_get_graph(token, region, patient_id)
+        if not graph_data:
+            raise HTTPException(500, "Falha ao buscar dados do sensor")
+
+        stored = 0
+        all_readings = []
+        connection_data = graph_data.get("connection", {})
+        if connection_data and connection_data.get("glucoseMeasurement"):
+            gm = connection_data["glucoseMeasurement"]
+            all_readings.append({
+                "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+                "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
+                "trend": _parse_trend(gm.get("TrendArrow", 0)),
+                "source": "current",
+            })
+        for gm in graph_data.get("graphData", []):
+            all_readings.append({
+                "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+                "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
+                "trend": _parse_trend(gm.get("TrendArrow", 0)),
+                "source": "history",
+            })
+
+        for r in all_readings:
+            parsed_ts = _parse_libre_timestamp(r["timestamp"])
+            if not parsed_ts or not r["glucose_value"]:
+                continue
+            existing = _supabase_client.table("libre_readings") \
+                .select("id") \
+                .eq("user_id", req.user_id) \
+                .eq("timestamp", parsed_ts) \
+                .execute()
+            if existing.data:
+                continue
+            _supabase_client.table("libre_readings").insert({
+                "user_id": req.user_id,
+                "timestamp": parsed_ts,
+                "glucose_value": r["glucose_value"],
+                "trend": r["trend"],
+                "source": r["source"],
+            }).execute()
+            stored += 1
+
+        _supabase_client.table("libre_connections") \
+            .update({"last_sync": datetime.now(timezone.utc).isoformat()}) \
+            .eq("id", conn["id"]).execute()
+
+        return {"status": "synced", "new_readings": stored}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Libre force sync error: {e}")
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/schedule")
