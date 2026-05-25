@@ -298,12 +298,18 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         labels: { color: '#a78bca', usePointStyle: true, pointStyle: 'circle', padding: 12, font: { size: 11 } },
       },
       tooltip: {
+        backgroundColor: 'rgba(30, 20, 50, 0.95)',
+        titleFont: { size: 13 },
+        bodyFont: { size: 12 },
+        padding: 10,
         callbacks: {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          title: (items: any[]) => items[0]?.label ?? '',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           label: (ctx: any) => {
             const pct = ctx.raw ?? 0;
             const count = (donutData as any).counts?.[ctx.dataIndex ?? 0] ?? 0;
-            return [`${ctx.label}: ${pct}%`, `${count} registro${count !== 1 ? 's' : ''}`];
+            return [`${pct}%`, `${count} registro${count !== 1 ? 's' : ''}`];
           },
         },
       },
