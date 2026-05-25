@@ -188,6 +188,7 @@ export default function ChartsPage() {
           borderWidth: 0,
         }],
       },
+      counts: [low, inRange, attention, high],
       total: t,
       inRangePct,
     };
@@ -257,7 +258,12 @@ export default function ChartsPage() {
       },
       tooltip: {
         callbacks: {
-          label: (ctx: { label?: string; raw?: unknown }) => `${ctx.label}`,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          label: (ctx: any) => {
+            const pct = ctx.raw ?? 0;
+            const count = rangeDonut?.counts?.[ctx.dataIndex ?? 0] ?? 0;
+            return [`${ctx.label}: ${pct}%`, `${count} registro${count !== 1 ? 's' : ''}`];
+          },
         },
       },
     },

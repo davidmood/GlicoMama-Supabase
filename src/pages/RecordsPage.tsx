@@ -26,7 +26,7 @@ export default function RecordsPage() {
   };
 
   const hasDetails = (r: GlucoseRecord) =>
-    !!(r.notes || r.foodDescription || r.symptoms);
+    !!(r.notes || r.foodDescription || r.symptoms || r.extractedAmount);
 
   const truncate = (text: string, max = 80) =>
     text.length > max ? text.slice(0, max) + '…' : text;
@@ -210,6 +210,9 @@ export default function RecordsPage() {
                                 {r.foodDescription && (
                                   <div><strong>Refeição:</strong> {r.foodDescription}</div>
                                 )}
+                                {r.extractedAmount ? (
+                                  <div><strong>Quantidade Extraída:</strong> {r.extractedAmount} ml</div>
+                                ) : null}
                                 {r.notes && (
                                   <div><strong>Observações:</strong> {r.notes}</div>
                                 )}
@@ -228,7 +231,7 @@ export default function RecordsPage() {
                                 onClick={() => toggleExpand(r.id)}
                               >
                                 {truncate(
-                                  [r.foodDescription, r.notes, r.symptoms].filter(Boolean).join(' | ')
+                                  [r.foodDescription, r.extractedAmount ? `${r.extractedAmount} ml` : '', r.notes, r.symptoms].filter(Boolean).join(' | ')
                                 )}
                               </div>
                             )}
