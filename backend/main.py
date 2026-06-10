@@ -37,9 +37,15 @@ LIBRE_REGIONS = {
 LIBRE_HEADERS = {
     "Content-Type": "application/json",
     "product": "llu.android",
-    "version": "4.12.0",
+    "version": "4.16.0",
     "Accept-Encoding": "gzip",
 }
+
+
+def _libre_account_id(user_id: str) -> str:
+    """Account-Id header required by LibreLinkUp API (Oct 2025): SHA-256 of user.id."""
+    return hashlib.sha256(user_id.encode()).hexdigest()
+
 
 # Simple encryption for storing LibreLinkUp credentials
 ENCRYPTION_KEY = os.environ.get("LIBRE_ENCRYPTION_KEY", os.environ.get("SUPABASE_SERVICE_KEY", "default-key")[:32])
@@ -195,16 +201,19 @@ def libre_login(email: str, password: str, region: str = "eu") -> dict | None:
             logger.error("LibreLinkUp login: no token in response")
             return None
 
-        return {"token": token, "region": region}
+        user_id = data.get("data", {}).get("user", {}).get("id", "")
+        return {"token": token, "region": region, "user_id": user_id}
     except Exception as e:
         logger.error(f"LibreLinkUp login error: {e}")
         return None
 
 
-def libre_get_connections(token: str, region: str) -> list:
+def libre_get_connections(token: str, region: str, user_id: str = "") -> list:
     """Get patient connections from LibreLinkUp."""
     base_url = LIBRE_REGIONS.get(region, LIBRE_REGIONS["eu"])
     headers = {**LIBRE_HEADERS, "Authorization": f"Bearer {token}"}
+    if user_id:
+        headers["Account-Id"] = _libre_account_id(user_id)
     try:
         resp = httpx.get(f"{base_url}/llu/connections", headers=headers, timeout=15)
         data = resp.json()
@@ -214,10 +223,12 @@ def libre_get_connections(token: str, region: str) -> list:
         return []
 
 
-def libre_get_graph(token: str, region: str, patient_id: str) -> dict | None:
+def libre_get_graph(token: str, region: str, patient_id: str, user_id: str = "") -> dict | None:
     """Get glucose graph data for a patient."""
     base_url = LIBRE_REGIONS.get(region, LIBRE_REGIONS["eu"])
     headers = {**LIBRE_HEADERS, "Authorization": f"Bearer {token}"}
+    if user_id:
+        headers["Account-Id"] = _libre_account_id(user_id)
     try:
         resp = httpx.get(
             f"{base_url}/llu/connections/{patient_id}/graph",
@@ -254,10 +265,11 @@ def poll_libre_readings():
 
                 token = login_result["token"]
                 region = login_result["region"]
+                user_id = login_result.get("user_id", "")
                 patient_id = conn.get("libre_patient_id", "")
 
                 if not patient_id:
-                    patients = libre_get_connections(token, region)
+                    patients = libre_get_connections(token, region, user_id)
                     if patients:
                         patient_id = patients[0].get("patientId", "")
                         if patient_id:
@@ -268,7 +280,7 @@ def poll_libre_readings():
                 if not patient_id:
                     continue
 
-                graph_data = libre_get_graph(token, region, patient_id)
+                graph_data = libre_get_graph(token, region, patient_id, user_id)
                 if not graph_data:
                     continue
 
@@ -484,12 +496,13 @@ def libre_connect(req: LibreConnectRequest):
 
     token = login_result["token"]
     region = login_result["region"]
+    user_id = login_result.get("user_id", "")
 
     # Get patient connections (quick call)
     patient_id = ""
     patient_name = ""
     try:
-        patients = libre_get_connections(token, region)
+        patients = libre_get_connections(token, region, user_id)
         if patients:
             patient_id = patients[0].get("patientId", "")
             p = patients[0]
@@ -616,12 +629,13 @@ def libre_force_sync(req: LibreStatusRequest):
 
     token = login_result["token"]
     region = login_result["region"]
+    user_id = login_result.get("user_id", "")
     patient_id = conn.get("libre_patient_id", "")
 
     # 3. Get patient ID if missing
     if not patient_id:
         try:
-            patients = libre_get_connections(token, region)
+            patients = libre_get_connections(token, region, user_id)
             if patients:
                 patient_id = patients[0].get("patientId", "")
                 if patient_id:
@@ -636,7 +650,7 @@ def libre_force_sync(req: LibreStatusRequest):
 
     # 4. Get graph data
     try:
-        graph_data = libre_get_graph(token, region, patient_id)
+        graph_data = libre_get_graph(token, region, patient_id, user_id)
     except Exception as e:
         logger.error(f"Sync: graph error: {e}")
         raise HTTPException(502, f"Erro ao buscar dados do sensor: {e}")
