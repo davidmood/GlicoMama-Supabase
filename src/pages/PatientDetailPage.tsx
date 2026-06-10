@@ -173,6 +173,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
           tension: 0.3,
           fill: false,
           spanGaps: true,
+          hidden: true,
         },
       ],
     };

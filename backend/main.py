@@ -347,6 +347,9 @@ def poll_libre_readings():
 
             except Exception as e:
                 logger.error(f"Libre poll error for user {conn.get('user_id', '?')}: {e}")
+
+        # After fresh readings are stored, auto-fill post-meal glucose on records
+        autofill_post_meal_readings()
     except Exception as e:
         logger.error(f"Libre poll global error: {e}")
 
@@ -381,6 +384,93 @@ def _parse_libre_timestamp(ts: str) -> str | None:
     if "T" in ts:
         return ts if ts.endswith("Z") else ts + "Z"
     return None
+
+
+def _parse_iso(ts: str) -> datetime | None:
+    """Parse a stored ISO timestamp (with Z or offset) to an aware datetime."""
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def _iso_z(dt: datetime) -> str:
+    """Format a datetime as 'YYYY-MM-DDTHH:MM:SSZ' (matches stored Libre readings)."""
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _closest_libre_value(user_id: str, target: datetime, tolerance_min: int = 15) -> int | None:
+    """Return the Libre glucose value closest to target within tolerance, or None."""
+    lo = _iso_z(target - timedelta(minutes=tolerance_min))
+    hi = _iso_z(target + timedelta(minutes=tolerance_min))
+    try:
+        res = _supabase_client.table("libre_readings") \
+            .select("timestamp,glucose_value") \
+            .eq("user_id", user_id) \
+            .gte("timestamp", lo) \
+            .lte("timestamp", hi) \
+            .execute()
+    except Exception as e:
+        logger.error(f"Autofill query error: {e}")
+        return None
+    best = None
+    best_diff = None
+    tgt = target.timestamp()
+    for row in (res.data or []):
+        ts = _parse_iso(row["timestamp"])
+        if not ts or not row.get("glucose_value"):
+            continue
+        diff = abs(ts.timestamp() - tgt)
+        if best_diff is None or diff < best_diff:
+            best_diff = diff
+            best = row["glucose_value"]
+    return int(round(best)) if best is not None else None
+
+
+def autofill_post_meal_readings():
+    """Auto-fill glucose_pos_1h / glucose_pos_2h on records from Libre readings."""
+    if not _supabase_client:
+        return
+    try:
+        now = datetime.now(timezone.utc)
+        since = _iso_z(now - timedelta(hours=30))
+        result = _supabase_client.table("glucose_records") \
+            .select("id,user_id,timestamp,glucose_pos_1h,glucose_pos_2h") \
+            .gte("timestamp", since) \
+            .execute()
+        for rec in (result.data or []):
+            need_1h = rec.get("glucose_pos_1h") is None
+            need_2h = rec.get("glucose_pos_2h") is None
+            if not need_1h and not need_2h:
+                continue
+            rec_ts = _parse_iso(rec["timestamp"])
+            if not rec_ts:
+                continue
+
+            updates = {}
+            if need_1h:
+                target = rec_ts + timedelta(hours=1)
+                if now >= target:
+                    val = _closest_libre_value(rec["user_id"], target)
+                    if val is not None:
+                        updates["glucose_pos_1h"] = val
+            if need_2h:
+                target = rec_ts + timedelta(hours=2)
+                if now >= target:
+                    val = _closest_libre_value(rec["user_id"], target)
+                    if val is not None:
+                        updates["glucose_pos_2h"] = val
+
+            if updates:
+                _supabase_client.table("glucose_records") \
+                    .update(updates) \
+                    .eq("id", rec["id"]).execute()
+                logger.info(f"Autofill record {rec['id']}: {list(updates.keys())}")
+    except Exception as e:
+        logger.error(f"Autofill error: {e}")
 
 
 @asynccontextmanager
