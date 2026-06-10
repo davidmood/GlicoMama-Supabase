@@ -27,6 +27,7 @@ export default function ChartsPage() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [period, setPeriod] = useState<7 | 14 | 30>(7);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showMeals, setShowMeals] = useState(false);
 
   useEffect(() => {
     Promise.all([getAllRecords(), getSettings()]).then(([r, s]) => {
@@ -215,7 +216,9 @@ export default function ChartsPage() {
           maxRotation: 45,
           callback: function(_: unknown, index: number) {
             const label = dailyChart.labels[index];
-            return label ? label.split('\n')[0] : '';
+            if (!label) return '';
+            const parts = label.split('\n');
+            return showMeals ? parts : parts[0];
           },
         },
       },
@@ -315,6 +318,20 @@ export default function ChartsPage() {
                 <ChevronRight size={18} />
               </button>
             </div>
+            <button
+              onClick={() => setShowMeals((v) => !v)}
+              style={{
+                fontSize: 12,
+                padding: '4px 12px',
+                borderRadius: 8,
+                border: '1px solid var(--border-color)',
+                background: showMeals ? 'var(--accent-purple)' : 'transparent',
+                color: showMeals ? '#fff' : 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+            >
+              {showMeals ? 'Ocultar refeições' : 'Mostrar refeições'}
+            </button>
           </div>
           <div className="chart-container"><Line data={dailyChart} options={dailyChartOpts} /></div>
         </div>

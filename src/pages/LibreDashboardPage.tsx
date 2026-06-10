@@ -323,16 +323,16 @@ export default function LibreDashboardPage({ onNavigate }: Props) {
             <div className="card-header"><h3>Distribuição</h3></div>
             <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', height: 28, marginBottom: 8 }}>
               {stats.lowPct > 0 && (
-                <div style={{ width: `${stats.lowPct}%`, background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 600 }}>
-                  {stats.lowPct}%
+                <div style={{ width: `${stats.lowPct}%`, background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                  {stats.lowPct >= 8 ? `${stats.lowPct}%` : ''}
                 </div>
               )}
-              <div style={{ width: `${stats.tirPct}%`, background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 600 }}>
-                {stats.tirPct}%
+              <div style={{ width: `${stats.tirPct}%`, background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                {stats.tirPct >= 8 ? `${stats.tirPct}%` : ''}
               </div>
               {stats.highPct > 0 && (
-                <div style={{ width: `${stats.highPct}%`, background: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 600 }}>
-                  {stats.highPct}%
+                <div style={{ width: `${stats.highPct}%`, background: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                  {stats.highPct >= 8 ? `${stats.highPct}%` : ''}
                 </div>
               )}
             </div>
