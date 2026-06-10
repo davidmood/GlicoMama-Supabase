@@ -290,7 +290,7 @@ def poll_libre_readings():
                 if connection_data and connection_data.get("glucoseMeasurement"):
                     gm = connection_data["glucoseMeasurement"]
                     readings.append({
-                        "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+                        "timestamp": gm.get("FactoryTimestamp") or gm.get("Timestamp", ""),
                         "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
                         "trend": _parse_trend(gm.get("TrendArrow", 0)),
                         "source": "current",
@@ -299,7 +299,7 @@ def poll_libre_readings():
                 # Historical readings from graph
                 for gm in graph_data.get("graphData", []):
                     readings.append({
-                        "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+                        "timestamp": gm.get("FactoryTimestamp") or gm.get("Timestamp", ""),
                         "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
                         "trend": _parse_trend(gm.get("TrendArrow", 0)),
                         "source": "history",
@@ -665,14 +665,14 @@ def libre_force_sync(req: LibreStatusRequest):
     if connection_data and connection_data.get("glucoseMeasurement"):
         gm = connection_data["glucoseMeasurement"]
         all_readings.append({
-            "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+            "timestamp": gm.get("FactoryTimestamp") or gm.get("Timestamp", ""),
             "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
             "trend": _parse_trend(gm.get("TrendArrow", 0)),
             "source": "current",
         })
     for gm in graph_data.get("graphData", []):
         all_readings.append({
-            "timestamp": gm.get("Timestamp") or gm.get("FactoryTimestamp", ""),
+            "timestamp": gm.get("FactoryTimestamp") or gm.get("Timestamp", ""),
             "glucose_value": gm.get("Value") or gm.get("ValueInMgPerDl", 0),
             "trend": _parse_trend(gm.get("TrendArrow", 0)),
             "source": "history",
