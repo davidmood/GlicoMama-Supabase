@@ -15,44 +15,57 @@ import { Line } from 'react-chartjs-2';
 import { format, startOfDay, endOfDay, subDays, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Activity, RefreshCw, ChevronLeft, ChevronRight, WifiOff, TrendingUp, TrendingDown, Minus, Clock, Settings } from 'lucide-react';
-import { getLibreReadings, trendArrow, type LibreReading } from '../services/libre';
+import { getLibreReadings, getLibreReadingsForPatient, trendArrow, type LibreReading } from '../services/libre';
 import { getSettings } from '../services/database';
 import type { UserSettings } from '../types';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, annotationPlugin);
 
-interface Props {
-  onNavigate?: (page: string) => void;
+interface PatientCgmSettings {
+  glucoseTargetMin: number;
+  glucoseTargetMax: number;
+  glucoseAttentionMax: number;
 }
 
-export default function LibreDashboardPage({ onNavigate }: Props) {
+interface Props {
+  onNavigate?: (page: string) => void;
+  patientId?: string;
+  patientSettings?: PatientCgmSettings;
+  embedded?: boolean;
+}
+
+export default function LibreDashboardPage({ onNavigate, patientId, patientSettings, embedded }: Props) {
   const [readings, setReadings] = useState<LibreReading[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [period, setPeriod] = useState<'1d' | '7d' | '14d'>('1d');
   const [loading, setLoading] = useState(true);
+  const [showAllReadings, setShowAllReadings] = useState(false);
 
   useEffect(() => {
-    getSettings().then(setSettings);
-  }, []);
+    if (!patientSettings) getSettings().then(setSettings);
+  }, [patientSettings]);
 
   useEffect(() => {
     loadReadings();
-  }, [selectedDate, period]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, period, patientId]);
 
   async function loadReadings() {
     setLoading(true);
     const days = period === '1d' ? 1 : period === '7d' ? 7 : 14;
     const start = startOfDay(period === '1d' ? selectedDate : subDays(selectedDate, days - 1));
     const end = endOfDay(selectedDate);
-    const data = await getLibreReadings(start.toISOString(), end.toISOString());
+    const data = patientId
+      ? await getLibreReadingsForPatient(patientId, start.toISOString(), end.toISOString())
+      : await getLibreReadings(start.toISOString(), end.toISOString());
     setReadings(data);
     setLoading(false);
   }
 
-  const targetMin = settings?.glucoseTargetMin ?? 70;
-  const targetMax = settings?.glucoseTargetMax ?? 180;
-  const attentionMax = settings?.glucoseAttentionMax ?? 250;
+  const targetMin = patientSettings?.glucoseTargetMin ?? settings?.glucoseTargetMin ?? 70;
+  const targetMax = patientSettings?.glucoseTargetMax ?? settings?.glucoseTargetMax ?? 180;
+  const attentionMax = patientSettings?.glucoseAttentionMax ?? settings?.glucoseAttentionMax ?? 250;
 
   // Stats
   const stats = useMemo(() => {
@@ -211,22 +224,24 @@ export default function LibreDashboardPage({ onNavigate }: Props) {
 
   return (
     <>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Activity size={22} style={{ color: 'var(--accent-purple)' }} />
-          CGM - Monitoramento Contínuo
-        </h2>
-        {onNavigate && (
-          <button
-            className="btn btn-secondary"
-            onClick={() => onNavigate('libre-settings')}
-            style={{ padding: '6px 12px', fontSize: 12 }}
-          >
-            <Settings size={14} />
-            Configurar
-          </button>
-        )}
-      </div>
+      {!embedded && (
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Activity size={22} style={{ color: 'var(--accent-purple)' }} />
+            CGM - Monitoramento Contínuo
+          </h2>
+          {onNavigate && !patientId && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => onNavigate('libre-settings')}
+              style={{ padding: '6px 12px', fontSize: 12 }}
+            >
+              <Settings size={14} />
+              Configurar
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Period selector + navigation */}
       <div className="card" style={{ padding: '12px 16px' }}>
@@ -372,8 +387,11 @@ export default function LibreDashboardPage({ onNavigate }: Props) {
         <div className="card">
           <div className="card-header">
             <h3>Leituras Recentes</h3>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {showAllReadings ? readings.length : Math.min(15, readings.length)} de {readings.length}
+            </span>
           </div>
-          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+          <div style={{ maxHeight: showAllReadings ? 500 : 300, overflowY: 'auto' }}>
             <table className="records-table" style={{ width: '100%' }}>
               <thead>
                 <tr>
@@ -383,7 +401,7 @@ export default function LibreDashboardPage({ onNavigate }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {[...readings].reverse().slice(0, 50).map(r => {
+                {[...readings].reverse().slice(0, showAllReadings ? readings.length : 15).map(r => {
                   const d = new Date(r.timestamp);
                   const color = r.glucoseValue < targetMin ? '#3b82f6'
                     : r.glucoseValue <= targetMax ? '#22c55e'
@@ -407,6 +425,15 @@ export default function LibreDashboardPage({ onNavigate }: Props) {
               </tbody>
             </table>
           </div>
+          {readings.length > 15 && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowAllReadings(v => !v)}
+              style={{ width: '100%', marginTop: 10, fontSize: 13 }}
+            >
+              {showAllReadings ? 'Mostrar menos' : `Mostrar + (${readings.length - 15} leituras)`}
+            </button>
+          )}
         </div>
       )}
     </>
