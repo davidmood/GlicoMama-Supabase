@@ -17,6 +17,7 @@ logger = logging.getLogger("glicomama-push")
 
 _supabase_client = None
 _scheduler = None
+_last_libre_poll = None
 
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
 VAPID_CLAIMS = {"sub": "mailto:glicomama@noreply.com"}
@@ -244,6 +245,8 @@ def libre_get_graph(token: str, region: str, patient_id: str, user_id: str = "")
 
 def poll_libre_readings():
     """Poll LibreLinkUp for all connected users and store readings."""
+    global _last_libre_poll
+    _last_libre_poll = datetime.now(timezone.utc)
     if not _supabase_client:
         return
     try:
@@ -911,3 +914,85 @@ def sync_reminders(req: SyncRemindersRequest):
     except Exception as e:
         logger.error(f"Sync reminders error: {e}")
         raise HTTPException(500, str(e))
+
+
+# ─── Admin / System status ─────────────────────────────────
+
+class AdminStatusRequest(BaseModel):
+    user_id: str
+
+
+def _is_admin(user_id: str) -> bool:
+    if not _supabase_client or not user_id:
+        return False
+    try:
+        res = _supabase_client.table("profiles") \
+            .select("is_admin") \
+            .eq("id", user_id) \
+            .limit(1) \
+            .execute()
+    except Exception as e:
+        logger.error(f"Admin check error: {e}")
+        return False
+    return bool(res.data and res.data[0].get("is_admin"))
+
+
+@app.post("/api/admin/status")
+def admin_status(req: AdminStatusRequest):
+    """System health + Supabase usage. Admin only."""
+    if not _supabase_client:
+        raise HTTPException(500, "Supabase não configurado")
+    if not _is_admin(req.user_id):
+        raise HTTPException(403, "Acesso restrito a administradores.")
+
+    free_tier_limit = 500 * 1024 * 1024  # 500 MB
+
+    db_size = None
+    try:
+        size_res = _supabase_client.rpc("get_db_size").execute()
+        if size_res.data is not None:
+            db_size = int(size_res.data)
+    except Exception as e:
+        logger.error(f"DB size error: {e}")
+
+    def _count(table: str) -> int | None:
+        try:
+            res = _supabase_client.table(table).select("id", count="exact").limit(1).execute()
+            return res.count
+        except Exception as e:
+            logger.error(f"Count error ({table}): {e}")
+            return None
+
+    libre_count = _count("libre_readings")
+    records_count = _count("glucose_records")
+
+    last_libre_reading = None
+    try:
+        lr = _supabase_client.table("libre_readings") \
+            .select("timestamp") \
+            .order("timestamp", desc=True) \
+            .limit(1) \
+            .execute()
+        if lr.data:
+            last_libre_reading = lr.data[0]["timestamp"]
+    except Exception as e:
+        logger.error(f"Last reading error: {e}")
+
+    return {
+        "backend": {
+            "status": "ok",
+            "supabase": bool(_supabase_client),
+            "vapid": bool(VAPID_PRIVATE_KEY),
+            "last_libre_poll": _last_libre_poll.isoformat() if _last_libre_poll else None,
+            "poll_interval_min": 30,
+            "server_time": datetime.now(timezone.utc).isoformat(),
+        },
+        "supabase": {
+            "db_size_bytes": db_size,
+            "free_tier_limit_bytes": free_tier_limit,
+            "usage_percent": round(db_size / free_tier_limit * 100, 2) if db_size else None,
+            "libre_readings_count": libre_count,
+            "glucose_records_count": records_count,
+            "last_libre_reading": last_libre_reading,
+        },
+    }

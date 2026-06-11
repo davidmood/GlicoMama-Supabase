@@ -182,6 +182,7 @@ export async function getSettings(): Promise<UserSettings> {
     role: profile.role || 'paciente',
     cpf: profile.cpf || undefined,
     crm: profile.crm || undefined,
+    isAdmin: profile.is_admin ?? false,
     reminders: (reminders || []).map((r: Record<string, unknown>) => ({
       id: r.id as string,
       time: r.time as string,
