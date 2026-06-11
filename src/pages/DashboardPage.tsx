@@ -205,6 +205,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           tension: 0.4,
           pointRadius: 3,
           borderDash: [5, 5],
+          hidden: true,
         },
         {
           label: 'Pós 2h',
@@ -213,7 +214,6 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           tension: 0.4,
           pointRadius: 3,
           borderDash: [5, 5],
-          hidden: true,
         },
       ],
     };
