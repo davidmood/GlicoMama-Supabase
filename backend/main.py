@@ -402,10 +402,19 @@ def _iso_z(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _closest_libre_value(user_id: str, target: datetime, tolerance_min: int = 15) -> int | None:
-    """Return the Libre glucose value closest to target within tolerance, or None."""
+def _closest_libre_value(
+    user_id: str,
+    target: datetime,
+    tolerance_min: int = 15,
+    require_after_min: int = 10,
+) -> int | None:
+    """Return the Libre glucose value closest to target within tolerance.
+
+    Only fills if there is at least one reading >= target + require_after_min,
+    so we never extrapolate from readings taken before the target time.
+    """
     lo = _iso_z(target - timedelta(minutes=tolerance_min))
-    hi = _iso_z(target + timedelta(minutes=tolerance_min))
+    hi = _iso_z(target + timedelta(minutes=max(tolerance_min, require_after_min) + 5))
     try:
         res = _supabase_client.table("libre_readings") \
             .select("timestamp,glucose_value") \
@@ -418,15 +427,23 @@ def _closest_libre_value(user_id: str, target: datetime, tolerance_min: int = 15
         return None
     best = None
     best_diff = None
+    has_after = False
     tgt = target.timestamp()
+    tol_sec = tolerance_min * 60
+    after_threshold = (target + timedelta(minutes=require_after_min)).timestamp()
     for row in (res.data or []):
         ts = _parse_iso(row["timestamp"])
         if not ts or not row.get("glucose_value"):
             continue
-        diff = abs(ts.timestamp() - tgt)
-        if best_diff is None or diff < best_diff:
+        ts_sec = ts.timestamp()
+        if ts_sec >= after_threshold:
+            has_after = True
+        diff = abs(ts_sec - tgt)
+        if diff <= tol_sec and (best_diff is None or diff < best_diff):
             best_diff = diff
             best = row["glucose_value"]
+    if require_after_min > 0 and not has_after:
+        return None
     return int(round(best)) if best is not None else None
 
 
@@ -484,9 +501,9 @@ async def lifespan(a: FastAPI):
         _scheduler = BackgroundScheduler()
         _scheduler.add_job(poll_scheduled_notifications, "interval", seconds=30)
         _scheduler.add_job(keep_alive, "interval", minutes=13)
-        _scheduler.add_job(poll_libre_readings, "interval", minutes=5)
+        _scheduler.add_job(poll_libre_readings, "interval", minutes=30)
         _scheduler.start()
-        logger.info("Scheduler started — polling every 30s, keep-alive every 13min, Libre every 5min")
+        logger.info("Scheduler started — polling every 30s, keep-alive every 13min, Libre every 30min")
     except Exception as e:
         logger.error(f"Scheduler error: {e}")
     yield

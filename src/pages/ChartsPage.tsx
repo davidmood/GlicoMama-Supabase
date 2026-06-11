@@ -68,8 +68,8 @@ export default function ChartsPage() {
       labels,
       datasets: [
         { label: 'Pré', data: preData, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.3, fill: true, pointRadius: 5, pointBackgroundColor: '#22c55e', spanGaps: true },
-        { label: 'Pós 1h', data: pos1Data, borderColor: '#f59e0b', tension: 0.3, pointRadius: 5, pointBackgroundColor: '#f59e0b', spanGaps: true },
-        { label: 'Pós 2h', data: pos2Data, borderColor: '#ec4899', tension: 0.3, pointRadius: 5, pointBackgroundColor: '#ec4899', spanGaps: true, hidden: true },
+        { label: 'Pós 1h', data: pos1Data, borderColor: '#f59e0b', tension: 0.3, pointRadius: 5, pointBackgroundColor: '#f59e0b', spanGaps: true, hidden: true },
+        { label: 'Pós 2h', data: pos2Data, borderColor: '#ec4899', tension: 0.3, pointRadius: 5, pointBackgroundColor: '#ec4899', spanGaps: true },
       ],
     };
   }, [records, selectedDate]);
