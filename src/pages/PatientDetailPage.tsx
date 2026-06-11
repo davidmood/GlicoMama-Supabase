@@ -19,6 +19,7 @@ import { getPatientRecords, getPatientProfile } from '../services/sharing';
 import { exportToCSV, exportToPDF } from '../services/export';
 import type { GlucoseRecord } from '../types';
 import { classifyGlucose } from '../types';
+import LibreDashboardPage from './LibreDashboardPage';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler);
 
@@ -409,6 +410,23 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
           </div>
         </div>
       )}
+
+      {/* CGM Libre */}
+      <div className="card-header" style={{ marginTop: 8 }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Activity size={18} style={{ color: 'var(--accent-purple)' }} />
+          CGM Libre
+        </h3>
+      </div>
+      <LibreDashboardPage
+        patientId={patientId}
+        patientSettings={{
+          glucoseTargetMin: settings.glucoseTargetMin,
+          glucoseTargetMax: settings.glucoseTargetMax,
+          glucoseAttentionMax: settings.glucoseAttentionMax,
+        }}
+        embedded
+      />
 
       {/* Recent records */}
       <div className="card">
