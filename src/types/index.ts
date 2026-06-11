@@ -121,6 +121,7 @@ export interface UserSettings {
   role?: UserRole;
   cpf?: string;
   crm?: string;
+  isAdmin?: boolean;
 }
 
 export interface ShareCode {

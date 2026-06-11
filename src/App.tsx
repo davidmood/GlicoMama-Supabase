@@ -18,6 +18,7 @@ import AuthPage from './pages/AuthPage';
 import Info from './pages/Info';
 import LibreDashboardPage from './pages/LibreDashboardPage';
 import LibreSettingsPage from './pages/LibreSettingsPage';
+import StatusPage from './pages/StatusPage';
 
 import NewRecordModal from './components/NewRecordModal';
 import Toast from './components/Toast';
@@ -71,6 +72,8 @@ export default function App() {
 
   const [userRole, setUserRole] =
     useState<UserRole>('paciente');
+
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [viewingPatientId, setViewingPatientId] =
     useState<string | null>(null);
@@ -135,7 +138,13 @@ export default function App() {
 
     setUserName(s.name);
     setDarkMode(s.darkMode);
-    setUserRole(s.role || 'paciente');
+    const role = s.role || 'paciente';
+    setUserRole(role);
+    setIsAdmin(s.isAdmin ?? false);
+
+    if (role !== 'paciente') {
+      setCurrentPage((p) => (p === 'dashboard' ? 'patients' : p));
+    }
 
     if (!s.onboardingCompleted) {
       setShowOnboarding(true);
@@ -261,6 +270,9 @@ export default function App() {
   };
 
   const renderPage = () => {
+    if (userRole !== 'paciente' && currentPage === 'dashboard') {
+      return <PatientsPage onNavigate={handleNavigate} />;
+    }
     switch (currentPage) {
       case 'dashboard':
         return (
@@ -268,6 +280,9 @@ export default function App() {
             onNavigate={handleNavigate}
           />
         );
+
+      case 'status':
+        return <StatusPage />;
 
       case 'records':
         return <RecordsPage />;
@@ -432,6 +447,7 @@ export default function App() {
           }
           onLogout={handleLogout}
           userRole={userRole}
+          isAdmin={isAdmin}
         />
 
         <main className="main-content">

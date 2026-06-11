@@ -14,6 +14,7 @@ import {
   Users,
   Share2,
   Activity,
+  Gauge,
 } from 'lucide-react';
 import type { UserRole } from '../types';
 
@@ -27,6 +28,7 @@ interface SidebarProps {
   onClose: () => void;
   onLogout?: () => void;
   userRole?: UserRole;
+  isAdmin?: boolean;
 }
 
 const patientNavItems = [
@@ -60,8 +62,12 @@ export default function Sidebar({
   onClose,
   onLogout,
   userRole = 'paciente',
+  isAdmin = false,
 }: SidebarProps) {
-  const navItems = userRole === 'paciente' ? patientNavItems : viewerNavItems;
+  const baseNavItems = userRole === 'paciente' ? patientNavItems : viewerNavItems;
+  const navItems = isAdmin
+    ? [...baseNavItems, { id: 'status', label: 'Status do Sistema', icon: Gauge }]
+    : baseNavItems;
   const initials = userName
     .split(' ')
     .map((n) => n[0])
