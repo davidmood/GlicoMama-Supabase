@@ -18,6 +18,7 @@ import { TrendingUp, Pencil, Trash2 } from 'lucide-react';
 import type { GlucoseRecord, UserSettings } from '../types';
 import { classifyGlucose, INSULIN_TYPE_CATEGORIES } from '../types';
 import { getAllRecords, deleteRecord, getSettings } from '../services/database';
+import { getLibreReadings, type LibreReading } from '../services/libre';
 import Calendar from '../components/Calendar';
 import NewRecordModal from '../components/NewRecordModal';
 import Toast from '../components/Toast';
@@ -32,6 +33,7 @@ interface DashboardPageProps {
 
 export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const [records, setRecords] = useState<GlucoseRecord[]>([]);
+  const [libreReadings, setLibreReadings] = useState<LibreReading[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editRecord, setEditRecord] = useState<GlucoseRecord | null>(null);
@@ -51,9 +53,15 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   }, []);
 
   const loadData = async () => {
-    const [recs, s] = await Promise.all([getAllRecords(), getSettings()]);
+    const weekStart = startOfDay(subDays(new Date(), 6));
+    const [recs, s, libre] = await Promise.all([
+      getAllRecords(),
+      getSettings(),
+      getLibreReadings(weekStart.toISOString(), endOfDay(new Date()).toISOString()).catch(() => []),
+    ]);
     setRecords(recs);
     setSettings(s);
+    setLibreReadings(libre);
   };
 
   const handleSave = async (record: GlucoseRecord, options?: { scheduleAlarm?: boolean }) => {
@@ -152,6 +160,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
     const avgPre: (number | null)[] = [];
     const avgPos1h: (number | null)[] = [];
     const avgPos2h: (number | null)[] = [];
+    const avgLibre: (number | null)[] = [];
 
     for (let i = 6; i >= 0; i--) {
       const day = subDays(new Date(), i);
@@ -172,11 +181,33 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       avgPre.push(preVals.length > 0 ? Math.round(preVals.reduce((a, b) => a + b, 0) / preVals.length) : null);
       avgPos1h.push(pos1Vals.length > 0 ? Math.round(pos1Vals.reduce((a, b) => a + b, 0) / pos1Vals.length) : null);
       avgPos2h.push(pos2Vals.length > 0 ? Math.round(pos2Vals.reduce((a, b) => a + b, 0) / pos2Vals.length) : null);
+
+      const libreVals = libreReadings
+        .filter((r) => {
+          const t = new Date(r.timestamp).getTime();
+          return t >= dayStart.getTime() && t <= dayEnd.getTime();
+        })
+        .map((r) => r.glucoseValue);
+      avgLibre.push(libreVals.length > 0 ? Math.round(libreVals.reduce((a, b) => a + b, 0) / libreVals.length) : null);
     }
+
+    const hasLibre = avgLibre.some((v) => v !== null);
 
     return {
       labels: days,
       datasets: [
+        ...(hasLibre
+          ? [{
+              label: 'Média CGM (Libre)',
+              data: avgLibre,
+              borderColor: '#0ea5e9',
+              backgroundColor: 'rgba(14, 165, 233, 0.1)',
+              tension: 0.4,
+              pointRadius: 4,
+              pointBackgroundColor: '#0ea5e9',
+              spanGaps: true,
+            }]
+          : []),
         {
           label: 'Média',
           data: avgPre.map((v, i) => {
@@ -217,7 +248,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         },
       ],
     };
-  }, [records]);
+  }, [records, libreReadings]);
 
   const lineChartOptions = {
     responsive: true,
