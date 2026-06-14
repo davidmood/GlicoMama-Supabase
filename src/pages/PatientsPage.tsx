@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Users, Search, UserPlus, Trash2 } from 'lucide-react';
 import { getMyPatients, removePatientLink } from '../services/sharing';
-import type { PatientLink } from '../types';
+import type { PatientLink, UserRole } from '../types';
 
 interface PatientsPageProps {
   onNavigate: (page: string) => void;
+  userRole?: UserRole;
 }
 
 function formatCpf(cpf: string): string {
@@ -15,10 +16,15 @@ function formatCpf(cpf: string): string {
   return cpf;
 }
 
-export default function PatientsPage({ onNavigate }: PatientsPageProps) {
+export default function PatientsPage({ onNavigate, userRole = 'medico' }: PatientsPageProps) {
   const [patients, setPatients] = useState<PatientLink[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const isFamiliar = userRole === 'familiar';
+  const t = isFamiliar
+    ? { plural: 'Conexões', single: 'conexão', addBtn: 'Adicionar Conexão', title: 'Minhas Conexões' }
+    : { plural: 'Pacientes', single: 'paciente', addBtn: 'Adicionar Paciente', title: 'Meus Pacientes' };
 
   useEffect(() => {
     loadPatients();
@@ -32,7 +38,7 @@ export default function PatientsPage({ onNavigate }: PatientsPageProps) {
   }
 
   async function handleRemove(linkId: string, name: string) {
-    if (!confirm(`Remover ${name} da sua lista de pacientes?`)) return;
+    if (!confirm(`Remover ${name} da sua lista de ${t.plural.toLowerCase()}?`)) return;
     await removePatientLink(linkId);
     setPatients(patients.filter(p => p.id !== linkId));
   }
@@ -49,7 +55,7 @@ export default function PatientsPage({ onNavigate }: PatientsPageProps) {
   return (
     <>
       <div className="page-header">
-        <h2>Meus Pacientes</h2>
+        <h2>{t.title}</h2>
         <button className="btn btn-primary" onClick={() => onNavigate('share')}>
           <UserPlus size={14} /> Adicionar
         </button>
@@ -81,19 +87,19 @@ export default function PatientsPage({ onNavigate }: PatientsPageProps) {
       ) : patients.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: 40 }}>
           <Users size={48} style={{ color: 'var(--text-muted)', marginBottom: 12 }} />
-          <h3 style={{ marginBottom: 8 }}>Nenhum paciente vinculado</h3>
+          <h3 style={{ marginBottom: 8 }}>Nenhuma {t.single} vinculada</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-            Peça ao paciente para gerar um código de compartilhamento no app.
+            Peça à pessoa para gerar um código de compartilhamento no app.
           </p>
           <button className="btn btn-primary" onClick={() => onNavigate('share')}>
-            <UserPlus size={14} /> Adicionar Paciente
+            <UserPlus size={14} /> {t.addBtn}
           </button>
         </div>
       ) : (
         <div>
           {filtered.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', padding: 24 }}>
-              <p style={{ color: 'var(--text-muted)' }}>Nenhum paciente encontrado para "{search}"</p>
+              <p style={{ color: 'var(--text-muted)' }}>Nenhuma {t.single} encontrada para "{search}"</p>
             </div>
           ) : (
             filtered.map(p => (
@@ -147,7 +153,7 @@ export default function PatientsPage({ onNavigate }: PatientsPageProps) {
           )}
 
           <div style={{ color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', marginTop: 8 }}>
-            {filtered.length} de {patients.length} paciente{patients.length !== 1 ? 's' : ''}
+            {filtered.length} de {patients.length} {patients.length !== 1 ? t.plural.toLowerCase() : t.single}
           </div>
         </div>
       )}

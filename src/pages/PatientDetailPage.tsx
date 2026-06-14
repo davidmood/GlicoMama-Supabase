@@ -81,6 +81,14 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     glucoseAttentionMax: (profile?.glucose_attention_max as number) ?? 140,
   }), [profile]);
 
+  const periodRange = useMemo(() => {
+    const baseDate = addDays(new Date(), dateOffset);
+    return {
+      start: startOfDay(subDays(baseDate, period - 1)),
+      end: endOfDay(baseDate),
+    };
+  }, [period, dateOffset]);
+
   const periodRecords = useMemo(() => {
     const baseDate = addDays(new Date(), dateOffset);
     const end = endOfDay(baseDate);
@@ -411,23 +419,6 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
         </div>
       )}
 
-      {/* CGM Libre */}
-      <div className="card-header" style={{ marginTop: 8 }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Activity size={18} style={{ color: 'var(--accent-purple)' }} />
-          CGM Libre
-        </h3>
-      </div>
-      <LibreDashboardPage
-        patientId={patientId}
-        patientSettings={{
-          glucoseTargetMin: settings.glucoseTargetMin,
-          glucoseTargetMax: settings.glucoseTargetMax,
-          glucoseAttentionMax: settings.glucoseAttentionMax,
-        }}
-        embedded
-      />
-
       {/* Recent records */}
       <div className="card">
         <div className="card-header">
@@ -492,6 +483,27 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
           </div>
         )}
       </div>
+
+      {/* CGM Libre */}
+      <div className="card-header" style={{ marginTop: 8 }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Activity size={18} style={{ color: 'var(--accent-purple)' }} />
+          CGM Libre
+        </h3>
+      </div>
+      <LibreDashboardPage
+        patientId={patientId}
+        patientSettings={{
+          glucoseTargetMin: settings.glucoseTargetMin,
+          glucoseTargetMax: settings.glucoseTargetMax,
+          glucoseAttentionMax: settings.glucoseAttentionMax,
+        }}
+        rangeStart={periodRange.start}
+        rangeEnd={periodRange.end}
+        periodDays={period}
+        mealRecords={periodRecords}
+        embedded
+      />
     </>
   );
 }

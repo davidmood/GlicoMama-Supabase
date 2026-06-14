@@ -271,7 +271,7 @@ export default function App() {
 
   const renderPage = () => {
     if (userRole !== 'paciente' && currentPage === 'dashboard') {
-      return <PatientsPage onNavigate={handleNavigate} />;
+      return <PatientsPage onNavigate={handleNavigate} userRole={userRole} />;
     }
     switch (currentPage) {
       case 'dashboard':
@@ -319,6 +319,7 @@ export default function App() {
         return (
           <PatientsPage
             onNavigate={handleNavigate}
+            userRole={userRole}
           />
         );
 
@@ -333,6 +334,7 @@ export default function App() {
         ) : (
           <PatientsPage
             onNavigate={handleNavigate}
+            userRole={userRole}
           />
         );
 
