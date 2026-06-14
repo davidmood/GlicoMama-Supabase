@@ -14,6 +14,7 @@ interface CgmRanges {
 interface ExportPdfOptions {
   libreReadings?: LibreReading[];
   ranges?: CgmRanges;
+  periodLabel?: string;
 }
 
 export function exportToCSV(records: GlucoseRecord[]): void {
@@ -110,8 +111,13 @@ export async function exportToPDF(records: GlucoseRecord[], userName: string, op
   doc.text(`Gerado em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, 14, infoY + 6);
   doc.text(`Total de registros: ${records.length}`, 14, infoY + 12);
 
-  const preValues = records.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
   let statsY = infoY + 18;
+  if (options?.periodLabel) {
+    doc.text(`Período: ${options.periodLabel}`, 14, statsY);
+    statsY += 6;
+  }
+
+  const preValues = records.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
   if (preValues.length > 0) {
     const avg = preValues.reduce((a, b) => a + b, 0) / preValues.length;
     const inRange = preValues.filter((v) => v >= 70 && v <= 140).length;
@@ -287,6 +293,12 @@ export async function exportToPDF(records: GlucoseRecord[], userName: string, op
     const pageW = doc.internal.pageSize.width;
     doc.text('GlicoMama - Este documento não substitui orientação médica profissional', 14, pageH - 8);
     doc.text(`Página ${i} de ${pageCount}`, pageW - 40, pageH - 8);
+    doc.setTextColor(120);
+    doc.text(
+      'Legenda: TIR = Tempo em Faixa (% das leituras no alvo)  |  GMI = HbA1c estimada pela média glicêmica  |  CV = variabilidade glicêmica (≤ 36% = estável)',
+      14,
+      pageH - 4,
+    );
   }
 
   doc.save(`glicemia_relatorio_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
