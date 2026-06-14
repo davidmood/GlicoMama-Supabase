@@ -76,7 +76,9 @@ export default function SharePage() {
     const result = await redeemShareCode(inputCode);
     setRedeemResult({
       success: result.success,
-      message: result.success ? 'Paciente vinculado com sucesso!' : (result.error || 'Erro desconhecido'),
+      message: result.success
+        ? `${role === 'familiar' ? 'Conexão vinculada' : 'Paciente vinculado'} com sucesso!`
+        : (result.error || 'Erro desconhecido'),
     });
     if (result.success) setInputCode('');
     setRedeemLoading(false);
@@ -214,22 +216,24 @@ export default function SharePage() {
   }
 
   // Doctor/Familiar view
+  const isFamiliar = role === 'familiar';
+  const targetTerm = isFamiliar ? 'Conexão' : 'Paciente';
   return (
     <>
       <div className="page-header">
-        <h2>Adicionar Paciente</h2>
+        <h2>Adicionar {targetTerm}</h2>
       </div>
 
       <div className="card">
         <div className="card-header">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <UserPlus size={18} style={{ color: 'var(--accent-purple)' }} />
-            Vincular Paciente
+            Vincular {targetTerm}
           </h3>
         </div>
 
         <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-          Digite o código de compartilhamento que o paciente gerou no app.
+          Digite o código de compartilhamento que a pessoa gerou no app.
         </p>
 
         <div className="form-group">
@@ -265,7 +269,7 @@ export default function SharePage() {
           style={{ width: '100%' }}
         >
           <UserPlus size={14} />
-          {redeemLoading ? 'Vinculando...' : 'Vincular Paciente'}
+          {redeemLoading ? 'Vinculando...' : `Vincular ${targetTerm}`}
         </button>
       </div>
     </>

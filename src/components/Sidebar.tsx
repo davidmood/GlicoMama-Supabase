@@ -45,9 +45,16 @@ const patientNavItems = [
   { id: 'settings', label: 'Configurações', icon: Settings },
 ];
 
-const viewerNavItems = [
+const medicoNavItems = [
   { id: 'patients', label: 'Pacientes', icon: Users },
   { id: 'share', label: 'Adicionar Paciente', icon: Share2 },
+  { id: 'profile', label: 'Perfil', icon: User },
+  { id: 'settings', label: 'Configurações', icon: Settings },
+];
+
+const familiarNavItems = [
+  { id: 'patients', label: 'Conexões', icon: Users },
+  { id: 'share', label: 'Adicionar Conexão', icon: Share2 },
   { id: 'profile', label: 'Perfil', icon: User },
   { id: 'settings', label: 'Configurações', icon: Settings },
 ];
@@ -64,7 +71,11 @@ export default function Sidebar({
   userRole = 'paciente',
   isAdmin = false,
 }: SidebarProps) {
-  const baseNavItems = userRole === 'paciente' ? patientNavItems : viewerNavItems;
+  const baseNavItems = userRole === 'paciente'
+    ? patientNavItems
+    : userRole === 'familiar'
+      ? familiarNavItems
+      : medicoNavItems;
   const navItems = isAdmin
     ? [...baseNavItems, { id: 'status', label: 'Status do Sistema', icon: Gauge }]
     : baseNavItems;

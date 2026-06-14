@@ -16,8 +16,19 @@ import { format, startOfDay, endOfDay, subDays, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Activity, RefreshCw, ChevronLeft, ChevronRight, WifiOff, TrendingUp, TrendingDown, Minus, Clock, Settings } from 'lucide-react';
 import { getLibreReadings, getLibreReadingsForPatient, trendArrow, type LibreReading } from '../services/libre';
-import { getSettings } from '../services/database';
-import type { UserSettings } from '../types';
+import { getSettings, getRecordsByDateRange } from '../services/database';
+import type { UserSettings, GlucoseRecord } from '../types';
+
+const MAIN_MEALS = ['Café da manhã', 'Lanche da manhã', 'Almoço', 'Lanche da tarde', 'Jantar', 'Ceia', 'Madrugada'];
+const MEAL_EMOJI: Record<string, string> = {
+  'Café da manhã': '🍳',
+  'Lanche da manhã': '🍎',
+  'Almoço': '🍽️',
+  'Lanche da tarde': '🥪',
+  'Jantar': '🍲',
+  'Ceia': '🌙',
+  'Madrugada': '🌙',
+};
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, annotationPlugin);
 
@@ -32,15 +43,23 @@ interface Props {
   patientId?: string;
   patientSettings?: PatientCgmSettings;
   embedded?: boolean;
+  rangeStart?: Date;
+  rangeEnd?: Date;
+  periodDays?: number;
+  mealRecords?: GlucoseRecord[];
 }
 
-export default function LibreDashboardPage({ onNavigate, patientId, patientSettings, embedded }: Props) {
+export default function LibreDashboardPage({ onNavigate, patientId, patientSettings, embedded, rangeStart, rangeEnd, periodDays, mealRecords }: Props) {
   const [readings, setReadings] = useState<LibreReading[]>([]);
+  const [ownRecords, setOwnRecords] = useState<GlucoseRecord[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [period, setPeriod] = useState<'1d' | '7d' | '14d'>('1d');
   const [loading, setLoading] = useState(true);
   const [showAllReadings, setShowAllReadings] = useState(false);
+
+  const controlled = !!(rangeStart && rangeEnd);
+  const is1d = controlled ? periodDays === 1 : period === '1d';
 
   useEffect(() => {
     if (!patientSettings) getSettings().then(setSettings);
@@ -49,19 +68,38 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
   useEffect(() => {
     loadReadings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, period, patientId]);
+  }, [selectedDate, period, patientId, rangeStart, rangeEnd]);
 
   async function loadReadings() {
     setLoading(true);
-    const days = period === '1d' ? 1 : period === '7d' ? 7 : 14;
-    const start = startOfDay(period === '1d' ? selectedDate : subDays(selectedDate, days - 1));
-    const end = endOfDay(selectedDate);
+    let start: Date;
+    let end: Date;
+    if (controlled) {
+      start = rangeStart!;
+      end = rangeEnd!;
+    } else {
+      const days = period === '1d' ? 1 : period === '7d' ? 7 : 14;
+      start = startOfDay(period === '1d' ? selectedDate : subDays(selectedDate, days - 1));
+      end = endOfDay(selectedDate);
+    }
     const data = patientId
       ? await getLibreReadingsForPatient(patientId, start.toISOString(), end.toISOString())
       : await getLibreReadings(start.toISOString(), end.toISOString());
     setReadings(data);
+    if (!patientId) {
+      try {
+        setOwnRecords(await getRecordsByDateRange(start, end));
+      } catch {
+        setOwnRecords([]);
+      }
+    }
     setLoading(false);
   }
+
+  const mealsForChart = useMemo(
+    () => (patientId ? (mealRecords ?? []) : ownRecords),
+    [patientId, mealRecords, ownRecords],
+  );
 
   const targetMin = patientSettings?.glucoseTargetMin ?? settings?.glucoseTargetMin ?? 70;
   const targetMax = patientSettings?.glucoseTargetMax ?? settings?.glucoseTargetMax ?? 180;
@@ -100,7 +138,7 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
 
     const labels = readings.map(r => {
       const d = new Date(r.timestamp);
-      return period === '1d'
+      return is1d
         ? format(d, 'HH:mm')
         : format(d, 'dd/MM HH:mm');
     });
@@ -126,7 +164,7 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
           backgroundColor: 'rgba(167,139,202,0.1)',
           pointBackgroundColor: colors,
           pointBorderColor: colors,
-          pointRadius: period === '1d' ? 3 : 1.5,
+          pointRadius: is1d ? 3 : 1.5,
           pointHoverRadius: 6,
           tension: 0.3,
           fill: true,
@@ -136,7 +174,7 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
       minVal,
       maxVal,
     };
-  }, [readings, period, targetMin, targetMax, attentionMax]);
+  }, [readings, is1d, targetMin, targetMax, attentionMax]);
 
   const chartOptions = useMemo(() => {
     if (!chartData) return {};
@@ -156,7 +194,7 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
             color: '#a78bca',
             font: { size: 9 },
             maxRotation: 45,
-            maxTicksLimit: period === '1d' ? 24 : 14,
+            maxTicksLimit: is1d ? 24 : 14,
           },
         },
       },
@@ -203,7 +241,156 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
         },
       },
     };
-  }, [chartData, readings, targetMin, targetMax, period]);
+  }, [chartData, readings, targetMin, targetMax, is1d]);
+
+  // Integrated chart: continuous glucose line + meal markers
+  const integratedData = useMemo(() => {
+    if (readings.length === 0) return null;
+
+    const labels = readings.map(r => {
+      const d = new Date(r.timestamp);
+      return is1d ? format(d, 'HH:mm') : format(d, 'dd/MM HH:mm');
+    });
+    const values = readings.map(r => r.glucoseValue);
+    const lineColors = readings.map(r => {
+      if (r.glucoseValue < targetMin) return '#3b82f6';
+      if (r.glucoseValue <= targetMax) return '#22c55e';
+      if (r.glucoseValue <= attentionMax) return '#f59e0b';
+      return '#ef4444';
+    });
+
+    const readingTimes = readings.map(r => new Date(r.timestamp).getTime());
+    const first = readingTimes[0];
+    const last = readingTimes[readingTimes.length - 1];
+    const mealByIndex: Record<number, { name: string; time: string; pre: number | null }> = {};
+    mealsForChart.forEach(m => {
+      if (!MAIN_MEALS.includes(m.mealType)) return;
+      const t = new Date(m.timestamp).getTime();
+      if (t < first || t > last) return;
+      let nearest = 0;
+      let best = Infinity;
+      for (let i = 0; i < readingTimes.length; i++) {
+        const diff = Math.abs(readingTimes[i] - t);
+        if (diff < best) { best = diff; nearest = i; }
+      }
+      mealByIndex[nearest] = {
+        name: m.mealType,
+        time: format(new Date(m.timestamp), 'HH:mm'),
+        pre: m.glucosePre ?? null,
+      };
+    });
+
+    const mealData = values.map((v, i) => (mealByIndex[i] !== undefined ? v : null));
+    const hasMeals = Object.keys(mealByIndex).length > 0;
+
+    const minVal = Math.min(...values, targetMin - 10);
+    const maxVal = Math.max(...values, targetMax + 10);
+
+    return {
+      mealByIndex,
+      hasMeals,
+      minVal,
+      maxVal,
+      chart: {
+        labels,
+        datasets: [
+          {
+            label: 'Glicemia',
+            data: values,
+            borderColor: '#a78bca',
+            backgroundColor: 'rgba(167,139,202,0.1)',
+            pointBackgroundColor: lineColors,
+            pointBorderColor: lineColors,
+            pointRadius: is1d ? 2 : 1,
+            pointHoverRadius: 5,
+            tension: 0.3,
+            fill: true,
+            borderWidth: 2,
+            order: 2,
+          },
+          {
+            label: 'Refeições',
+            data: mealData,
+            showLine: false,
+            pointStyle: 'triangle',
+            pointRadius: 9,
+            pointHoverRadius: 12,
+            pointBackgroundColor: '#ec4899',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 1.5,
+            order: 1,
+          },
+        ],
+      },
+    };
+  }, [readings, mealsForChart, is1d, targetMin, targetMax, attentionMax]);
+
+  const integratedOptions = useMemo(() => {
+    if (!integratedData) return {};
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          min: Math.max(0, (integratedData.minVal ?? 40) - 10),
+          max: (integratedData.maxVal ?? 250) + 10,
+          grid: { color: 'rgba(167,139,202,0.1)' },
+          ticks: { color: '#a78bca', font: { size: 10 } },
+        },
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: '#a78bca',
+            font: { size: 9 },
+            maxRotation: 0,
+            autoSkip: false,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            callback: function (this: any, value: any) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const label = (this as any).getLabelForValue(value) as string;
+              if (!label.endsWith(':00')) return '';
+              return is1d ? label.slice(0, 2) + 'h' : label;
+            },
+          },
+        },
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { color: '#a78bca', font: { size: 11 }, usePointStyle: true, boxWidth: 8 },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(30, 20, 50, 0.95)',
+          callbacks: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            label: (ctx: any) => {
+              if (ctx.datasetIndex === 1) {
+                const m = integratedData.mealByIndex[ctx.dataIndex];
+                if (!m) return '';
+                const emoji = MEAL_EMOJI[m.name] || '🍽️';
+                return `${emoji} ${m.name} (${m.time})${m.pre ? ` · Pré ${m.pre}` : ''}`;
+              }
+              const reading = readings[ctx.dataIndex];
+              const arrow = reading ? trendArrow(reading.trend) : '';
+              return `${ctx.raw} mg/dL ${arrow}`;
+            },
+          },
+        },
+        annotation: {
+          annotations: {
+            targetZone: {
+              type: 'box',
+              yMin: targetMin,
+              yMax: targetMax,
+              backgroundColor: 'rgba(34,197,94,0.08)',
+              borderWidth: 0,
+            },
+          },
+        },
+      },
+    };
+  }, [integratedData, readings, is1d, targetMin, targetMax]);
 
   const navigate = (dir: number) => {
     const days = period === '1d' ? 1 : period === '7d' ? 7 : 14;
@@ -244,6 +431,7 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
       )}
 
       {/* Period selector + navigation */}
+      {!controlled && (
       <div className="card" style={{ padding: '12px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 4 }}>
@@ -286,6 +474,7 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
           </button>
         </div>
       </div>
+      )}
 
       {/* Current reading + stats */}
       {stats && (
@@ -382,6 +571,21 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
         </div>
       </div>
 
+      {/* Integrated chart: glucose + meals */}
+      {integratedData && (
+        <div className="card">
+          <div className="card-header">
+            <h3>Glicemia + Refeições</h3>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {integratedData.hasMeals ? 'refeições marcadas no horário' : 'sem refeições no período'}
+            </span>
+          </div>
+          <div className="chart-container" style={{ height: 300 }}>
+            <Line data={integratedData.chart} options={integratedOptions as Record<string, unknown>} />
+          </div>
+        </div>
+      )}
+
       {/* Recent readings table */}
       {readings.length > 0 && (
         <div className="card">
@@ -411,7 +615,7 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
                       <td style={{ fontSize: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                           <Clock size={12} style={{ color: 'var(--text-muted)' }} />
-                          {period === '1d' ? format(d, 'HH:mm') : format(d, 'dd/MM HH:mm')}
+                          {is1d ? format(d, 'HH:mm') : format(d, 'dd/MM HH:mm')}
                         </div>
                       </td>
                       <td style={{ textAlign: 'center', fontWeight: 700, color }}>{r.glucoseValue} mg/dL</td>
