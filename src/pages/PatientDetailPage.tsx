@@ -316,7 +316,10 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => exportToPDF(periodRecords, patientName)}
+            onClick={() => exportToPDF(periodRecords, patientName, {
+              libreReadings,
+              ranges: { targetMin: tirRanges.min, targetMax: tirRanges.max, attentionMax: tirRanges.attMax },
+            })}
             style={{ padding: '6px 12px', fontSize: 12 }}
           >
             <Download size={14} /> PDF
