@@ -38,6 +38,12 @@ const features: Feature[] = [
     icon: "📊",
   },
   {
+    title: "Integração FreeStyle Libre",
+    description:
+      "Conecte sua conta LibreLinkUp e tenha as leituras do sensor coletadas automaticamente, com dashboard de monitoramento contínuo (CGM).",
+    icon: "📡",
+  },
+  {
     title: "Instalável no iPhone",
     description:
       "Use como aplicativo no iOS e Android sem precisar da App Store.",
@@ -54,6 +60,28 @@ const techs: string[] = [
   "PWA",
   "Vercel",
   "FastAPI",
+  "Render",
+  "LibreLinkUp",
+];
+
+type LibreDevice = {
+  name: string;
+  description: string;
+};
+
+const libreDevices: LibreDevice[] = [
+  {
+    name: "FreeStyle Libre 2 / 2 Plus",
+    description: "Sensor com alarmes opcionais de glicose, leitura contínua via app.",
+  },
+  {
+    name: "FreeStyle Libre 3 / 3 Plus",
+    description: "O menor sensor da Abbott, com leituras em tempo real minuto a minuto.",
+  },
+  {
+    name: "FreeStyle Libre (1ª geração)",
+    description: "Compatível quando os dados são compartilhados pelo app FreeStyle LibreLink.",
+  },
 ];
 
 export default function Info() {
@@ -213,6 +241,98 @@ export default function Info() {
               </p>
             </motion.div>
           ))}
+        </div>
+      </section>
+
+      {/* Libre integration */}
+      <section
+        id="libre"
+        className="relative z-10 border-y border-white/10 bg-white/[0.03] backdrop-blur-xl py-24"
+      >
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <div className="inline-flex px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-200 text-sm mb-6">
+              📡 Monitoramento Contínuo de Glicose (CGM)
+            </div>
+
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black">
+              Integração com FreeStyle Libre
+            </h2>
+
+            <p className="text-white/60 text-xl mt-6 leading-relaxed">
+              Conecte sua conta LibreLinkUp uma vez e o GlicoMama coleta as
+              leituras do sensor automaticamente — mesmo com o app fechado. O
+              dashboard CGM mostra a glicemia contínua, Tempo em Faixa, GMI
+              (HbA1c estimada) e ainda preenche sozinho os valores Pré, Pós 1h e
+              Pós 2h dos seus registros.
+            </p>
+          </div>
+
+          {/* How it works */}
+          <div className="grid md:grid-cols-3 gap-6 mb-16">
+            {[
+              {
+                step: "1",
+                title: "Compartilhe no app Libre",
+                desc: "Ative o compartilhamento com o LibreLinkUp no app FreeStyle LibreLink.",
+              },
+              {
+                step: "2",
+                title: "Conecte no GlicoMama",
+                desc: "Informe seu e-mail e senha do LibreLinkUp na tela CGM Libre.",
+              },
+              {
+                step: "3",
+                title: "Coleta automática",
+                desc: "O backend busca as leituras periodicamente e preenche seus registros.",
+              },
+            ].map((s) => (
+              <div
+                key={s.step}
+                className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl p-7"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xl font-black shadow-2xl shadow-pink-500/20">
+                  {s.step}
+                </div>
+                <h3 className="text-xl font-bold mt-5">{s.title}</h3>
+                <p className="mt-3 text-white/60 leading-relaxed">{s.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Compatible devices */}
+          <div className="text-center mb-10">
+            <h3 className="text-2xl sm:text-3xl font-black">
+              Dispositivos compatíveis
+            </h3>
+            <p className="text-white/50 mt-3">
+              Sensores que funcionam via LibreLinkUp (com o app FreeStyle
+              LibreLink e compartilhamento ativo).
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {libreDevices.map((device) => (
+              <div
+                key={device.name}
+                className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl p-7 hover:bg-white/10 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🩸</span>
+                  <h4 className="text-lg font-bold">{device.name}</h4>
+                </div>
+                <p className="mt-3 text-white/60 leading-relaxed">
+                  {device.description}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-white/40 text-sm text-center mt-10 max-w-3xl mx-auto">
+            FreeStyle Libre e LibreLinkUp são marcas da Abbott. O GlicoMama não é
+            afiliado à Abbott; a integração usa a conta LibreLinkUp do próprio
+            usuário. A disponibilidade dos sensores varia por país.
+          </p>
         </div>
       </section>
 
