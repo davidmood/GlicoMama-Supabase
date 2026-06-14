@@ -3,6 +3,7 @@ import { Settings, Moon, Database, Trash2, Download, Upload, Save, Clock, Bell }
 import { getSettings, getAllRecords, deleteAllRecords } from '../services/database';
 import type { UserSettings } from '../types';
 import { exportToCSV, exportToPDF } from '../services/export';
+import { getLibreReadings } from '../services/libre';
 import { createBackup, downloadBackup, importBackup, listAutoBackups, restoreAutoBackup, type AutoBackupInfo } from '../services/backup';
 import { requestNotificationPermission, sendTestNotification } from '../services/notifications';
 import { DisclaimerBanner } from '../components/Disclaimer';
@@ -55,7 +56,15 @@ export default function SettingsPage({ darkMode, onToggleDarkMode, onSettingsCha
 
   const handleExportPDF = async () => {
     const records = await getAllRecords();
-    await exportToPDF(records, settings?.name ?? 'Usuário');
+    const libreReadings = await getLibreReadings().catch(() => []);
+    await exportToPDF(records, settings?.name ?? 'Usuário', {
+      libreReadings,
+      ranges: settings ? {
+        targetMin: settings.glucoseTargetMin,
+        targetMax: settings.glucoseTargetMax,
+        attentionMax: settings.glucoseAttentionMax,
+      } : undefined,
+    });
   };
 
   const handleManualBackup = async () => {

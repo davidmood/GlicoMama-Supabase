@@ -16,6 +16,7 @@ import {
   Filler,
 } from 'chart.js';
 import { getPatientRecords, getPatientProfile } from '../services/sharing';
+import { getLibreReadingsForPatient, type LibreReading } from '../services/libre';
 import { exportToCSV, exportToPDF } from '../services/export';
 import type { GlucoseRecord } from '../types';
 import { classifyGlucose } from '../types';
@@ -54,6 +55,7 @@ function rowToRecord(row: Record<string, unknown>): GlucoseRecord {
 
 export default function PatientDetailPage({ patientId, onBack }: PatientDetailPageProps) {
   const [records, setRecords] = useState<GlucoseRecord[]>([]);
+  const [libreReadings, setLibreReadings] = useState<LibreReading[]>([]);
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(7);
@@ -88,6 +90,14 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
       end: endOfDay(baseDate),
     };
   }, [period, dateOffset]);
+
+  useEffect(() => {
+    let active = true;
+    getLibreReadingsForPatient(patientId, periodRange.start.toISOString(), periodRange.end.toISOString())
+      .then(r => { if (active) setLibreReadings(r); })
+      .catch(() => { if (active) setLibreReadings([]); });
+    return () => { active = false; };
+  }, [patientId, periodRange]);
 
   const periodRecords = useMemo(() => {
     const baseDate = addDays(new Date(), dateOffset);
@@ -153,9 +163,34 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
     const pos1hData = sorted.map(r => r.glucosePos1h ?? null);
     const pos2hData = sorted.map(r => r.glucosePos2h ?? null);
 
+    // Daily average of the Libre sensor (optional). Mapped per record's day so it
+    // aligns with this chart's per-record x-axis; absent when there's no Libre.
+    const byDay: Record<string, number[]> = {};
+    libreReadings.forEach(r => {
+      const key = format(new Date(r.timestamp), 'yyyy-MM-dd');
+      (byDay[key] ||= []).push(r.glucoseValue);
+    });
+    const dayAvg: Record<string, number> = {};
+    Object.keys(byDay).forEach(k => {
+      dayAvg[k] = Math.round(byDay[k].reduce((a, b) => a + b, 0) / byDay[k].length);
+    });
+    const libreData = sorted.map(r => dayAvg[format(new Date(r.timestamp), 'yyyy-MM-dd')] ?? null);
+    const hasLibre = Object.keys(dayAvg).length > 0;
+
     return {
       labels,
       datasets: [
+        ...(hasLibre ? [{
+          label: 'Média CGM (Libre)',
+          data: libreData,
+          borderColor: '#0ea5e9',
+          backgroundColor: 'rgba(14,165,233,0.1)',
+          tension: 0.3,
+          fill: false,
+          spanGaps: true,
+          pointRadius: 4,
+          pointBackgroundColor: '#0ea5e9',
+        }] : []),
         {
           label: 'Pré-refeição',
           data: preData,
@@ -186,7 +221,7 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
         },
       ],
     };
-  }, [periodRecords]);
+  }, [periodRecords, libreReadings]);
 
   const yRange = useMemo(() => {
     if (glucoseValues.length === 0) return { min: 40, max: 200 };
@@ -281,7 +316,10 @@ export default function PatientDetailPage({ patientId, onBack }: PatientDetailPa
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => exportToPDF(periodRecords, patientName)}
+            onClick={() => exportToPDF(periodRecords, patientName, {
+              libreReadings,
+              ranges: { targetMin: tirRanges.min, targetMax: tirRanges.max, attentionMax: tirRanges.attMax },
+            })}
             style={{ padding: '6px 12px', fontSize: 12 }}
           >
             <Download size={14} /> PDF

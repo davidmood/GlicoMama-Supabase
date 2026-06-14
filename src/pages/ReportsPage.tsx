@@ -1,24 +1,34 @@
 import { useEffect, useState, useMemo } from 'react';
 import { subDays } from 'date-fns';
 import { FileText, Download } from 'lucide-react';
-import type { GlucoseRecord } from '../types';
+import type { GlucoseRecord, UserSettings } from '../types';
 import { getAllRecords, getSettings } from '../services/database';
+import { getLibreReadings, type LibreReading } from '../services/libre';
 import { exportToCSV, exportToPDF } from '../services/export';
 
 export default function ReportsPage() {
   const [records, setRecords] = useState<GlucoseRecord[]>([]);
+  const [libreReadings, setLibreReadings] = useState<LibreReading[]>([]);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
   const [userName, setUserName] = useState('');
   const [period, setPeriod] = useState(30);
 
   useEffect(() => {
     getAllRecords().then(setRecords);
-    getSettings().then((s) => setUserName(s.name));
+    getSettings().then((s) => { setUserName(s.name); setSettings(s); });
   }, []);
 
   const filtered = useMemo(() => {
     const start = subDays(new Date(), period);
     return records.filter((r) => new Date(r.timestamp) >= start);
   }, [records, period]);
+
+  useEffect(() => {
+    const start = subDays(new Date(), period);
+    getLibreReadings(start.toISOString(), new Date().toISOString())
+      .then(setLibreReadings)
+      .catch(() => setLibreReadings([]));
+  }, [period]);
 
   const stats = useMemo(() => {
     const preVals = filtered.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
@@ -95,7 +105,14 @@ export default function ReportsPage() {
           </p>
           <button
             className="btn btn-primary"
-            onClick={() => { exportToPDF(filtered, userName); }}
+            onClick={() => { exportToPDF(filtered, userName, {
+              libreReadings,
+              ranges: settings ? {
+                targetMin: settings.glucoseTargetMin,
+                targetMax: settings.glucoseTargetMax,
+                attentionMax: settings.glucoseAttentionMax,
+              } : undefined,
+            }); }}
             disabled={filtered.length === 0}
           >
             <Download size={16} /> Baixar PDF
