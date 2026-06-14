@@ -1,17 +1,25 @@
 import { useEffect, useState, useMemo } from 'react';
-import { subDays } from 'date-fns';
-import { FileText, Download } from 'lucide-react';
+import { subDays, startOfDay, endOfDay, startOfMonth, format } from 'date-fns';
+import { X, FileText, Download } from 'lucide-react';
 import type { GlucoseRecord, UserSettings } from '../types';
 import { getAllRecords, getSettings } from '../services/database';
-import { getLibreReadings, type LibreReading } from '../services/libre';
+import { getLibreReadings } from '../services/libre';
 import { exportToCSV, exportToPDF } from '../services/export';
+
+type RangeOption = '30d' | 'month' | 'custom';
 
 export default function ReportsPage() {
   const [records, setRecords] = useState<GlucoseRecord[]>([]);
-  const [libreReadings, setLibreReadings] = useState<LibreReading[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [userName, setUserName] = useState('');
   const [period, setPeriod] = useState(30);
+
+  const [exportModal, setExportModal] = useState<null | 'pdf' | 'csv'>(null);
+  const [rangeOption, setRangeOption] = useState<RangeOption>('30d');
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const [customStart, setCustomStart] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [customEnd, setCustomEnd] = useState(today);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     getAllRecords().then(setRecords);
@@ -23,12 +31,54 @@ export default function ReportsPage() {
     return records.filter((r) => new Date(r.timestamp) >= start);
   }, [records, period]);
 
-  useEffect(() => {
-    const start = subDays(new Date(), period);
-    getLibreReadings(start.toISOString(), new Date().toISOString())
-      .then(setLibreReadings)
-      .catch(() => setLibreReadings([]));
-  }, [period]);
+  function resolveRange(): { start: Date; end: Date; label: string } {
+    const now = new Date();
+    if (rangeOption === 'month') {
+      const start = startOfMonth(now);
+      return { start, end: endOfDay(now), label: `${format(start, 'dd/MM/yyyy')} – ${format(now, 'dd/MM/yyyy')}` };
+    }
+    if (rangeOption === 'custom') {
+      const start = startOfDay(new Date(`${customStart}T00:00:00`));
+      const end = endOfDay(new Date(`${customEnd}T00:00:00`));
+      return { start, end, label: `${format(start, 'dd/MM/yyyy')} – ${format(end, 'dd/MM/yyyy')}` };
+    }
+    const start = startOfDay(subDays(now, 30));
+    return { start, end: endOfDay(now), label: `Últimos 30 dias (${format(start, 'dd/MM/yyyy')} – ${format(now, 'dd/MM/yyyy')})` };
+  }
+
+  async function handleConfirmExport() {
+    const type = exportModal;
+    if (!type) return;
+    if (rangeOption === 'custom') {
+      if (!customStart || !customEnd) { alert('Selecione as datas de início e fim.'); return; }
+      if (new Date(customStart) > new Date(customEnd)) { alert('A data de início não pode ser depois da data de fim.'); return; }
+    }
+    setExporting(true);
+    try {
+      const { start, end, label } = resolveRange();
+      const rangeRecords = records.filter((r) => {
+        const t = new Date(r.timestamp).getTime();
+        return t >= start.getTime() && t <= end.getTime();
+      });
+      if (type === 'csv') {
+        exportToCSV(rangeRecords);
+      } else {
+        const libre = await getLibreReadings(start.toISOString(), end.toISOString()).catch(() => []);
+        await exportToPDF(rangeRecords, userName, {
+          libreReadings: libre,
+          ranges: settings ? {
+            targetMin: settings.glucoseTargetMin,
+            targetMax: settings.glucoseTargetMax,
+            attentionMax: settings.glucoseAttentionMax,
+          } : undefined,
+          periodLabel: label,
+        });
+      }
+      setExportModal(null);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const stats = useMemo(() => {
     const preVals = filtered.filter((r) => r.glucosePre).map((r) => r.glucosePre!);
@@ -105,15 +155,7 @@ export default function ReportsPage() {
           </p>
           <button
             className="btn btn-primary"
-            onClick={() => { exportToPDF(filtered, userName, {
-              libreReadings,
-              ranges: settings ? {
-                targetMin: settings.glucoseTargetMin,
-                targetMax: settings.glucoseTargetMax,
-                attentionMax: settings.glucoseAttentionMax,
-              } : undefined,
-            }); }}
-            disabled={filtered.length === 0}
+            onClick={() => { setRangeOption('30d'); setExportModal('pdf'); }}
           >
             <Download size={16} /> Baixar PDF
           </button>
@@ -128,8 +170,7 @@ export default function ReportsPage() {
           <button
             className="btn btn-primary"
             style={{ background: 'var(--accent-green)' }}
-            onClick={() => exportToCSV(filtered)}
-            disabled={filtered.length === 0}
+            onClick={() => { setRangeOption('30d'); setExportModal('csv'); }}
           >
             <Download size={16} /> Baixar CSV
           </button>
@@ -181,6 +222,68 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
+
+      {exportModal && (
+        <div className="modal-overlay" onClick={() => !exporting && setExportModal(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Exportar {exportModal === 'pdf' ? 'PDF' : 'CSV'} — período</h3>
+              <button className="btn-icon" onClick={() => !exporting && setExportModal(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="radio" name="rangeOption" checked={rangeOption === '30d'} onChange={() => setRangeOption('30d')} />
+                  Últimos 30 dias
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="radio" name="rangeOption" checked={rangeOption === 'month'} onChange={() => setRangeOption('month')} />
+                  Este mês
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="radio" name="rangeOption" checked={rangeOption === 'custom'} onChange={() => setRangeOption('custom')} />
+                  Personalizado
+                </label>
+
+                {rangeOption === 'custom' && (
+                  <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+                    <div style={{ flex: 1 }}>
+                      <label className="form-label" style={{ fontSize: 12 }}>Início</label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={customStart}
+                        max={today}
+                        onChange={(e) => setCustomStart(e.target.value)}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label className="form-label" style={{ fontSize: 12 }}>Fim</label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={customEnd}
+                        max={today}
+                        onChange={(e) => setCustomEnd(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: 16 }}>
+              <button className="btn btn-secondary" onClick={() => setExportModal(null)} disabled={exporting}>
+                Cancelar
+              </button>
+              <button className="btn btn-primary" onClick={handleConfirmExport} disabled={exporting}>
+                <Download size={16} /> {exporting ? 'Gerando...' : 'Baixar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
