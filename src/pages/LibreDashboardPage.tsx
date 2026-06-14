@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -60,6 +60,28 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
 
   const controlled = !!(rangeStart && rangeEnd);
   const is1d = controlled ? periodDays === 1 : period === '1d';
+
+  const integratedChartRef = useRef<ChartJS<'line'> | null>(null);
+
+  const highlightMealPoint = (index: number) => {
+    const chart = integratedChartRef.current;
+    if (!chart) return;
+    const active = [{ datasetIndex: 1, index }];
+    chart.setActiveElements(active);
+    const point = chart.getDatasetMeta(1)?.data?.[index];
+    if (chart.tooltip && point) {
+      chart.tooltip.setActiveElements(active, { x: point.x, y: point.y });
+    }
+    chart.update();
+  };
+
+  const clearHighlight = () => {
+    const chart = integratedChartRef.current;
+    if (!chart) return;
+    chart.setActiveElements([]);
+    chart.tooltip?.setActiveElements([], { x: 0, y: 0 });
+    chart.update();
+  };
 
   useEffect(() => {
     if (!patientSettings) getSettings().then(setSettings);
@@ -283,11 +305,37 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
     const mealData = values.map((v, i) => (mealByIndex[i] !== undefined ? v : null));
     const hasMeals = Object.keys(mealByIndex).length > 0;
 
+    // List of meals (sorted by time) with the Libre value at that moment — shown
+    // below the chart so the value is readable without hovering/tapping.
+    const mealList = Object.keys(mealByIndex)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(idx => ({
+        ...mealByIndex[idx],
+        glucose: values[idx],
+        index: idx,
+      }));
+
+    // Hourly x-axis labels: mark the first reading of each new hour, since the
+    // Libre rarely has a reading exactly at HH:00.
+    const hourLabelByIndex: Record<number, string> = {};
+    let prevHourKey = '';
+    readings.forEach((r, i) => {
+      const d = new Date(r.timestamp);
+      const hourKey = format(d, 'yyyy-MM-dd-HH');
+      if (hourKey !== prevHourKey) {
+        hourLabelByIndex[i] = is1d ? format(d, 'HH') + 'h' : format(d, 'dd/MM HH') + 'h';
+        prevHourKey = hourKey;
+      }
+    });
+
     const minVal = Math.min(...values, targetMin - 10);
     const maxVal = Math.max(...values, targetMax + 10);
 
     return {
       mealByIndex,
+      mealList,
+      hourLabelByIndex,
       hasMeals,
       minVal,
       maxVal,
@@ -314,7 +362,8 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
             showLine: false,
             pointStyle: 'triangle',
             pointRadius: 9,
-            pointHoverRadius: 12,
+            pointHoverRadius: 13,
+            pointHitRadius: 20,
             pointBackgroundColor: '#ec4899',
             pointBorderColor: '#fff',
             pointBorderWidth: 1.5,
@@ -345,11 +394,8 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
             maxRotation: 0,
             autoSkip: false,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            callback: function (this: any, value: any) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const label = (this as any).getLabelForValue(value) as string;
-              if (!label.endsWith(':00')) return '';
-              return is1d ? label.slice(0, 2) + 'h' : label;
+            callback: function (value: any) {
+              return integratedData.hourLabelByIndex[value as number] ?? '';
             },
           },
         },
@@ -581,8 +627,49 @@ export default function LibreDashboardPage({ onNavigate, patientId, patientSetti
             </span>
           </div>
           <div className="chart-container" style={{ height: 300 }}>
-            <Line data={integratedData.chart} options={integratedOptions as Record<string, unknown>} />
+            <Line ref={integratedChartRef} data={integratedData.chart} options={integratedOptions as Record<string, unknown>} />
           </div>
+
+          {integratedData.hasMeals && (
+            <div
+              style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}
+              onMouseLeave={clearHighlight}
+            >
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
+                Passe o mouse ou toque nos itens para destacar o ponto no gráfico
+              </div>
+              {integratedData.mealList.map((m, i) => {
+                const color = m.glucose < targetMin ? '#3b82f6'
+                  : m.glucose <= targetMax ? '#22c55e'
+                  : m.glucose <= attentionMax ? '#f59e0b' : '#ef4444';
+                return (
+                  <div
+                    key={`${m.name}-${m.time}-${i}`}
+                    onMouseEnter={() => highlightMealPoint(m.index)}
+                    onTouchStart={() => highlightMealPoint(m.index)}
+                    onTouchMove={() => highlightMealPoint(m.index)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 8, padding: '8px 12px', borderRadius: 10,
+                      background: 'var(--bg-secondary)', fontSize: 13, cursor: 'pointer',
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <span style={{ fontSize: 16 }}>{MEAL_EMOJI[m.name] || '🍽️'}</span>
+                      <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12, flexShrink: 0 }}>{m.time}</span>
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                      {m.pre != null && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Pré {m.pre}</span>
+                      )}
+                      <span style={{ fontWeight: 700, color }}>{m.glucose} mg/dL</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
